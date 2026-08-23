@@ -51,6 +51,48 @@ def load_path(path):
 _NUM = re.compile(r"^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$")
 
 
+_ESCAPES = {"n": "\n", "t": "\t", "r": "\r", "0": "\0", "a": "\a", "b": "\b",
+            "f": "\f", "v": "\v", "e": "\x1b", "\\": "\\", '"': '"', "/": "/",
+            " ": " ", "N": "\x85", "_": "\xa0"}
+
+
+def _unescape(body):
+    """Resolve the escapes a YAML double-quoted scalar may contain.
+
+    ``\\uXXXX`` and ``\\UXXXXXXXX`` matter in practice: figure labels carry Greek
+    letters and maths symbols, and a spec written for PyYAML must mean the same
+    thing here.  Anything unrecognised is left alone rather than dropped.
+    """
+    out, i, n = [], 0, len(body)
+    while i < n:
+        ch = body[i]
+        if ch != "\\" or i + 1 >= n:
+            out.append(ch)
+            i += 1
+            continue
+        nxt = body[i + 1]
+        if nxt in ("x", "u", "U"):
+            width = {"x": 2, "u": 4, "U": 8}[nxt]
+            digits = body[i + 2:i + 2 + width]
+            if len(digits) == width:
+                try:
+                    out.append(chr(int(digits, 16)))
+                    i += 2 + width
+                    continue
+                except ValueError:
+                    pass
+            out.append(ch)
+            i += 1
+            continue
+        if nxt in _ESCAPES:
+            out.append(_ESCAPES[nxt])
+            i += 2
+            continue
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
 def _scalar(tok):
     tok = tok.strip()
     if not tok:
@@ -58,7 +100,9 @@ def _scalar(tok):
     if len(tok) >= 2 and tok[0] == tok[-1] and tok[0] in "\"'":
         body = tok[1:-1]
         if tok[0] == '"':
-            body = body.replace("\\n", "\n").replace('\\"', '"').replace("\\\\", "\\")
+            body = _unescape(body)
+        else:
+            body = body.replace("''", "'")
         return body
     low = tok.lower()
     if low in ("null", "~") or tok == "~":

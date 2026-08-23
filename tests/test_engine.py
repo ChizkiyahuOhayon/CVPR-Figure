@@ -65,6 +65,16 @@ check(d["figure"]["id"] == "t", "nested inline mapping")
 check(d["panels"][0]["body"][1]["row"][0]["id"] == "b", "nested flow sequence")
 check(d["edges"][0]["from"] == "a", "block mapping inside a sequence")
 if real is not None:
+    for _case in ('a: "Rocket \\U0001F680"', 'a: "\\u03bc x \\u00d7"',
+                  'a: "line\\nbreak"', 'a: "tab\\there"', "a: 'it''s'",
+                  'a: "quote \\" end"'):
+        _py = real.safe_load(_case)["a"]
+        miniyaml._pyyaml = None
+        try:
+            _mini = miniyaml.load(_case)["a"]
+        finally:
+            miniyaml._pyyaml = real
+        check(_py == _mini, "escape parity for %s" % _case)
     y = miniyaml.load("a: off\nb: no\nc: true\nd: false\n")
     check(y["a"] == "off" and y["b"] == "no", "on/off/yes/no stay strings, so they work as ids")
     check(y["c"] is True and y["d"] is False, "true/false stay boolean")

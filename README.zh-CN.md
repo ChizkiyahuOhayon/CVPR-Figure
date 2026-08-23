@@ -475,7 +475,7 @@ scripts/
 templates/                十一个原型 + stencil.vsdx / stencil.pptx
 examples/quickstart.yaml  上面那个 50 行示例
 assets/gallery/           渲染预览
-tests/test_engine.py      99 项回归测试
+tests/test_engine.py      105 项回归测试
 ```
 
 ---
@@ -486,7 +486,7 @@ tests/test_engine.py      99 项回归测试
 python3 tests/test_engine.py
 ```
 
-99 项检查，零依赖，约两秒。覆盖：字宽测量对照已发表论文的实际框宽、内置 YAML 解析器（与 PyYAML 输出逐字节一致）、版面吸附、端口法向路由、颜色与具名线宽解析、容器嵌套形式、每一种形状、十一个模板的渲染**并且通过审计**、`.vsdx` / `.pptx` 包结构与形状数量、审计器自身的正反例。
+105 项检查，零依赖，约两秒。覆盖：字宽测量对照已发表论文的实际框宽、内置 YAML 解析器（与 PyYAML 输出逐字节一致）、版面吸附、端口法向路由、颜色与具名线宽解析、容器嵌套形式、每一种形状、十一个模板的渲染**并且通过审计**、`.vsdx` / `.pptx` 包结构与形状数量、审计器自身的正反例。
 
 CI 在 Python 3.9 / 3.11 / 3.13 上**不装任何依赖**跑这些测试，所以一旦有人引入依赖，构建会直接失败。
 

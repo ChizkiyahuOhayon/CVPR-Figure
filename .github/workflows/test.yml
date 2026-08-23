@@ -21,9 +21,17 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       # The engine is standard library only.  This job deliberately installs
-      # nothing, so a regression that introduces a dependency fails here.
-      - name: Run the regression suite
+      # nothing, so a regression that introduces a dependency fails here, and
+      # the bundled YAML parser is the one under test.
+      - name: Run the regression suite (no dependencies)
         run: python3 tests/test_engine.py
+
+      # Re-run with PyYAML present, which also switches on the parity checks
+      # that compare the bundled parser against it.
+      - name: Run the regression suite (with PyYAML)
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 tests/test_engine.py
 
       - name: Render every template and audit it
         run: |

@@ -523,7 +523,7 @@ scripts/
 templates/                eleven archetypes + stencil.vsdx / stencil.pptx
 examples/quickstart.yaml  the 50-line example above
 assets/gallery/           rendered previews
-tests/test_engine.py      99 regression checks
+tests/test_engine.py      105 regression checks
 ```
 
 ---
@@ -534,7 +534,7 @@ tests/test_engine.py      99 regression checks
 python3 tests/test_engine.py
 ```
 
-99 checks, no dependencies, about two seconds. They cover text metrics against a
+105 checks, no dependencies, about two seconds. They cover text metrics against a
 published box width, the bundled YAML parser (byte-identical output to PyYAML),
 layout snapping, port-normal routing, colour and named-stroke resolution, nested
 container forms, every shape, all eleven templates rendering *and passing the
