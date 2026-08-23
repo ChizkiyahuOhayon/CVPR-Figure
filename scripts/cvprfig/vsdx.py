@@ -595,7 +595,7 @@ CORE = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties"
  xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/"
  xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
-<dc:title>%s</dc:title><dc:creator>cvpr-figure</dc:creator><cp:lastModifiedBy>cvpr-figure</cp:lastModifiedBy>
+<dc:title>%s</dc:title><dc:creator>CVPR-Figure</dc:creator><cp:lastModifiedBy>CVPR-Figure</cp:lastModifiedBy>
 </cp:coreProperties>"""
 
 APP = """<?xml version="1.0" encoding="UTF-8" standalone="yes"?>

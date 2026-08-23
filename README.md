@@ -1,4 +1,10 @@
-<h1 align="center">cvpr-figure</h1>
+<h1 align="center">CVPR-Figure</h1>
+
+<p align="center">
+  <b>English</b>
+  &nbsp;|&nbsp;
+  <a href="README.zh-CN.md"><b>简体中文</b></a>
+</p>
 
 <p align="center">
   <b>Publication-grade pipeline, framework and teaser figures for AI conference papers.</b><br>
@@ -12,11 +18,11 @@
   <a href="#the-template-gallery">Templates</a> ·
   <a href="#editing-the-output-visio-powerpoint-illustrator">Visio</a> ·
   <a href="#the-auditor">Auditor</a> ·
-  <a href="README.zh-CN.md">中文文档</a>
+  <a href="#faq">FAQ</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/ChizkiyahuOhayon/cvpr-figure/actions/workflows/test.yml"><img alt="tests" src="https://github.com/ChizkiyahuOhayon/cvpr-figure/actions/workflows/test.yml/badge.svg"></a>
+  <a href="https://github.com/ChizkiyahuOhayon/CVPR-Figure/actions/workflows/test.yml"><img alt="tests" src="https://github.com/ChizkiyahuOhayon/CVPR-Figure/actions/workflows/test.yml/badge.svg"></a>
   <img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-blue.svg">
   <img alt="Python 3.8+" src="https://img.shields.io/badge/python-3.8%2B-blue.svg">
   <img alt="no dependencies" src="https://img.shields.io/badge/dependencies-none-brightgreen.svg">
@@ -46,7 +52,7 @@ recognise them in about a second:
 | No real data anywhere | Real input crops and real output renders, embedded |
 | "Figure 1: Overview of the proposed framework." | A caption that states a claim |
 
-Every one of those is a *default*. `cvpr-figure` removes them from the engine so
+Every one of those is a *default*. `CVPR-Figure` removes them from the engine so
 they cannot come back by accident:
 
 - the palette, type sizes, stroke weights, corner radii and padding were
@@ -83,8 +89,8 @@ a "nicer" invented palette — which reads as foreign immediately — and treats
 No install, no dependencies. Clone and render:
 
 ```bash
-git clone https://github.com/ChizkiyahuOhayon/cvpr-figure.git
-cd cvpr-figure
+git clone https://github.com/ChizkiyahuOhayon/CVPR-Figure.git
+cd CVPR-Figure
 
 python3 scripts/render.py examples/quickstart.yaml -o build/quickstart \
         -f svg,pdf,png,pptx,vsdx --dpi 600
@@ -125,14 +131,20 @@ python3 scripts/validate.py examples/quickstart.yaml --svg build/quickstart.svg
 ### As a Claude Code skill (recommended)
 
 ```bash
-git clone https://github.com/ChizkiyahuOhayon/cvpr-figure.git
-cd cvpr-figure
+git clone https://github.com/ChizkiyahuOhayon/CVPR-Figure.git
+cd CVPR-Figure
 ./install.sh              # -> ~/.claude/skills/cvpr-figure   (all projects)
 ./install.sh --project    # -> ./.claude/skills/cvpr-figure   (this repo only)
 ```
 
 The installer copies the skill, runs a self-test, and reports which optional
-converters it found. Then just ask, in plain language:
+converters it found.
+
+> The project is **CVPR-Figure**, but the installed skill id is `cvpr-figure`
+> in lowercase — Claude Code skill ids are lowercase-kebab, so that is what you
+> type after the slash.
+
+Then just ask, in plain language:
 
 > Read `method.tex` and draw the overview figure for a CVPR submission,
 > full width. Export a PDF for LaTeX and an editable `.vsdx`.
@@ -147,10 +159,10 @@ Point the agent at [`AGENTS.md`](AGENTS.md) — the same instructions without th
 Claude Code routing metadata:
 
 ```bash
-git clone https://github.com/ChizkiyahuOhayon/cvpr-figure.git third_party/cvpr-figure
+git clone https://github.com/ChizkiyahuOhayon/CVPR-Figure.git third_party/CVPR-Figure
 # then, in your AGENTS.md / .cursorrules / system prompt:
 #   "For any framework, pipeline, teaser or module figure,
-#    follow third_party/cvpr-figure/AGENTS.md."
+#    follow third_party/CVPR-Figure/AGENTS.md."
 ```
 
 `agents/openai.yaml` carries the display name and default prompt for hosts that

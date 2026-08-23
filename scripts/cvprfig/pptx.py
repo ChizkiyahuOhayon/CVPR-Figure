@@ -544,7 +544,7 @@ def _theme():
            '<a:solidFill><a:schemeClr val="phClr"/></a:solidFill></a:bgFillStyleLst>'
            '</a:fmtScheme>')
     return ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-            '<a:theme xmlns:a="%s" name="cvpr-figure"><a:themeElements>'
+            '<a:theme xmlns:a="%s" name="CVPR-Figure"><a:themeElements>'
             '<a:clrScheme name="Office">%s</a:clrScheme>'
             '<a:fontScheme name="Office"><a:majorFont><a:latin typeface="Times New Roman"/>'
             '<a:ea typeface=""/><a:cs typeface=""/></a:majorFont>'

@@ -1,4 +1,10 @@
-<h1 align="center">cvpr-figure</h1>
+<h1 align="center">CVPR-Figure</h1>
+
+<p align="center">
+  <a href="README.md"><b>English</b></a>
+  &nbsp;|&nbsp;
+  <b>简体中文</b>
+</p>
 
 <p align="center">
   <b>面向 AI 顶会论文的 pipeline / 框架图 / teaser 图生成 skill。</b><br>
@@ -12,11 +18,11 @@
   <a href="#模板库">模板库</a> ·
   <a href="#编辑输出visiopowerpointillustrator">Visio</a> ·
   <a href="#审计器">审计器</a> ·
-  <a href="README.md">English</a>
+  <a href="#常见问题">常见问题</a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/ChizkiyahuOhayon/cvpr-figure/actions/workflows/test.yml"><img alt="tests" src="https://github.com/ChizkiyahuOhayon/cvpr-figure/actions/workflows/test.yml/badge.svg"></a>
+  <a href="https://github.com/ChizkiyahuOhayon/CVPR-Figure/actions/workflows/test.yml"><img alt="tests" src="https://github.com/ChizkiyahuOhayon/CVPR-Figure/actions/workflows/test.yml/badge.svg"></a>
   <img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-blue.svg">
   <img alt="Python 3.8+" src="https://img.shields.io/badge/python-3.8%2B-blue.svg">
   <img alt="no dependencies" src="https://img.shields.io/badge/dependencies-none-brightgreen.svg">
@@ -44,7 +50,7 @@ AI 生成的框架图不是"丑"，而是**通用**。审稿人一秒就能认�
 | 全篇没有一张真实数据 | 输入截图和输出渲染，直接嵌进去 |
 | "图 1：所提出框架的总览。" | caption 陈述一个论断 |
 
-上面每一条都是**默认行为**。`cvpr-figure` 的做法不是"提示模型别这么画"，而是**把这些默认从引擎里拆掉**：
+上面每一条都是**默认行为**。`CVPR-Figure` 的做法不是"提示模型别这么画"，而是**把这些默认从引擎里拆掉**：
 
 - 配色、字号、线宽、圆角、内边距，全部是用 PyMuPDF **从已发表 CVPR/ICCV/AAAI 论文 PDF 的矢量内容里量出来的**，不是自己编的（方法与数值见 [`references/house-style.md`](references/house-style.md)）；
 - 版面由确定性求解器计算，**单位是最终印刷磅值**——spec 里写 `size: 7.0`，纸上就是 7.0 pt，不需要心算；
@@ -71,8 +77,8 @@ AI 生成的框架图不是"丑"，而是**通用**。审稿人一秒就能认�
 零依赖、免安装。clone 下来直接出图：
 
 ```bash
-git clone https://github.com/ChizkiyahuOhayon/cvpr-figure.git
-cd cvpr-figure
+git clone https://github.com/ChizkiyahuOhayon/CVPR-Figure.git
+cd CVPR-Figure
 
 python3 scripts/render.py examples/quickstart.yaml -o build/quickstart \
         -f svg,pdf,png,pptx,vsdx --dpi 600
@@ -112,13 +118,18 @@ python3 scripts/validate.py examples/quickstart.yaml --svg build/quickstart.svg
 ### 作为 Claude Code skill（推荐）
 
 ```bash
-git clone https://github.com/ChizkiyahuOhayon/cvpr-figure.git
-cd cvpr-figure
+git clone https://github.com/ChizkiyahuOhayon/CVPR-Figure.git
+cd CVPR-Figure
 ./install.sh              # -> ~/.claude/skills/cvpr-figure   （全局，所有项目可用）
 ./install.sh --project    # -> ./.claude/skills/cvpr-figure   （只在当前项目）
 ```
 
-安装脚本会复制 skill、跑一遍自检、并报告找到了哪些可选转换器。之后直接用自然语言提要求：
+安装脚本会复制 skill、跑一遍自检、并报告找到了哪些可选转换器。
+
+> 项目名是 **CVPR-Figure**，但装好的 skill id 是小写的 `cvpr-figure`——
+> Claude Code 的 skill id 规定是小写连字符，所以斜杠后面要敲小写。
+
+之后直接用自然语言提要求：
 
 > 读一下 `method.tex`，给 CVPR 投稿画一张通栏的 overview 图。
 > 导出 LaTeX 用的 PDF，再给我一份可编辑的 `.vsdx`。
@@ -130,10 +141,10 @@ Claude Code 会加载 [`SKILL.md`](SKILL.md)，填图表契约、选原型、写
 把 agent 指向 [`AGENTS.md`](AGENTS.md)——同样的指令，去掉了 Claude Code 的路由元数据：
 
 ```bash
-git clone https://github.com/ChizkiyahuOhayon/cvpr-figure.git third_party/cvpr-figure
+git clone https://github.com/ChizkiyahuOhayon/CVPR-Figure.git third_party/CVPR-Figure
 # 然后在你的 AGENTS.md / .cursorrules / system prompt 里写：
 #   "任何框架图、pipeline 图、teaser 图、模块图，
-#    都遵循 third_party/cvpr-figure/AGENTS.md。"
+#    都遵循 third_party/CVPR-Figure/AGENTS.md。"
 ```
 
 `agents/openai.yaml` 里有给相应宿主读取的显示名和默认 prompt。

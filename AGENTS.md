@@ -1,4 +1,4 @@
-# cvpr-figure — agent entry point
+# CVPR-Figure — agent entry point
 
 Portable instructions for agents that do not read `SKILL.md` frontmatter
 (Codex, Cursor, Aider, plain API loops). Behaviour is identical; `SKILL.md` is

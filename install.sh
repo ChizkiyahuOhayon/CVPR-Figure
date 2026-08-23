@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
-# Install cvpr-figure as a Claude Code skill.
+# Install CVPR-Figure as a Claude Code skill.
 #
 #   ./install.sh              -> ~/.claude/skills/cvpr-figure   (all projects)
 #   ./install.sh --project    -> ./.claude/skills/cvpr-figure   (this repo only)
+#
+# The installed skill id stays lowercase (cvpr-figure) because Claude Code
+# skill ids are lowercase-kebab; only the project's display name is CVPR-Figure.
 #
 # The skill is copied, not symlinked, so pulling this repo later will not
 # silently change a skill you are relying on.  Re-run to update.
@@ -19,7 +22,7 @@ else
 fi
 
 if ! command -v python3 >/dev/null 2>&1; then
-  echo "error: python3 not found. cvpr-figure needs Python 3.8 or newer." >&2
+  echo "error: python3 not found. CVPR-Figure needs Python 3.8 or newer." >&2
   exit 1
 fi
 
