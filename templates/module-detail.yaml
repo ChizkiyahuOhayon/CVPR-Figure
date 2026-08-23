@@ -1,0 +1,59 @@
+# Module zoom-in: one block of the pipeline expanded, with tensor shapes and
+# operators named.  Archetype: the second method figure, referenced from the
+# equations, that lets a reviewer check the maths against the wiring.
+figure:
+  id: module-detail
+  venue: cvpr
+  width: single
+  font: times
+
+layout: col
+gap: 8
+
+panels:
+  - id: blk
+    title: "Deformable Query Refinement"
+    frame: dashed
+    padl: 16
+    body:
+      - row:
+          gap: 9
+          align: center
+          body:
+            - {id: q_in, shape: slab, n: 3, cell: 7, cellh: 26, role: attention,
+               caption: "*Q*_{t}", caption_size: 6.6}
+            - {id: proj, text: "Linear", role: encoder}
+            - {id: off,  text: "Offset\nPrediction", role: core}
+      - {id: s1, shape: spacer, h: 7, w: 4}
+      - row:
+          gap: 9
+          align: center
+          body:
+            - {id: samp, text: "Bilinear\nSampling", role: attention}
+            - {id: mix,  shape: circleop, op: "x", d: 12}
+            - {id: wts,  text: "Attention\nWeights", role: core, tint: light}
+      - {id: s2, shape: spacer, h: 7, w: 4}
+      - row:
+          gap: 9
+          align: center
+          body:
+            - {id: agg, shape: circleop, op: "+", d: 12}
+            - {id: ffn, text: "FFN", role: encoder}
+            - {id: q_out, shape: slab, n: 3, cell: 7, cellh: 26, role: attention,
+               caption: "*Q*_{t+1}", caption_size: 6.6}
+
+edges:
+  - {from: q_in, to: proj}
+  - {from: proj, to: off}
+  - {from: off.s, to: samp.n, route: vh}
+  - {from: samp, to: mix}
+  - {from: wts, to: mix}
+  - {from: mix.s, to: agg.n, route: vh}
+  - {from: q_in.w, to: agg.w, route: bus, bend: 5, dash: true, lw: box,
+     label: "residual", label_size: 5.8, label_dx: 4, label_anchor: start}
+  - {from: agg, to: ffn}
+  - {from: ffn, to: q_out}
+
+notes:
+  - {text: "*N* × *C*", near: q_in.n, dy: -5, size: 5.8}
+  - {text: "*N* × *K* × *C*", near: samp.s, dy: 6, size: 5.8}

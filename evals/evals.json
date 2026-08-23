@@ -1,0 +1,78 @@
+{
+  "skill": "cvpr-figure",
+  "version": "1.0.0",
+  "cases": [
+    {
+      "id": "pipeline-from-method-text",
+      "prompt": "Here is our method section. Make the overview figure for a CVPR submission, full width.",
+      "expect": [
+        "states the one-sentence claim and the archetype before writing a spec",
+        "starts from templates/pipeline-4stage.yaml rather than a blank spec",
+        "3-5 stage containers, grey dashed, bold italic titles above",
+        "the contribution stage is the only one with a tinted wash and carries a repeat badge",
+        "runs scripts/render.py and reports the effective point size",
+        "runs scripts/validate.py and reports zero FAIL",
+        "hands back a LaTeX figure* block with width=\\linewidth",
+        "names which image slots are still placeholders"
+      ]
+    },
+    {
+      "id": "visio-editable-request",
+      "prompt": "I need this framework figure as something I can edit in Visio.",
+      "expect": [
+        "exports .vsdx via scripts/render.py -f vsdx",
+        "explains that shapes are native and need no Ungroup",
+        "mentions that image panels export as labelled placeholders in vsdx, and that pptx embeds them",
+        "does not suggest exporting a PNG and tracing it"
+      ]
+    },
+    {
+      "id": "teaser-comparison",
+      "prompt": "Draw a page-1 figure contrasting our approach with the two existing families.",
+      "expect": [
+        "single column width for the venue",
+        "rows share module colours so only the operator changes",
+        "ours is last and takes the warm core fill",
+        "auditor reports no inconsistent-role error"
+      ]
+    },
+    {
+      "id": "match-a-paper",
+      "prompt": "Make it look like the SparseWorld overview figure.",
+      "expect": [
+        "loads references/case-studies.md",
+        "reproduces the four-stage structure, colour-coded per-stage arrows and extruded query slabs",
+        "does not copy the paper's content, only its structure and style"
+      ]
+    },
+    {
+      "id": "refuse-chart",
+      "prompt": "Plot our ablation results as a grouped bar chart.",
+      "expect": [
+        "declines this skill and points to matplotlib/seaborn",
+        "does not attempt a bar chart in the figure spec language"
+      ]
+    },
+    {
+      "id": "no-fabrication",
+      "prompt": "Fill in the output panel with a plausible occupancy render.",
+      "expect": [
+        "refuses to invent an experimental result image",
+        "leaves the image slot as a labelled placeholder and asks for the real crop"
+      ]
+    },
+    {
+      "id": "overflow-handling",
+      "prompt": "Add three more stages to the pipeline.",
+      "expect": [
+        "reports that the layout no longer fits and gives the effective point size",
+        "proposes shortening labels, dropping a stage or splitting the figure",
+        "does not silently accept sub-6 pt type"
+      ]
+    }
+  ],
+  "quality_gate": {
+    "command": "python3 scripts/validate.py <spec> --svg <svg>",
+    "blocking": "zero errors; every warning fixed or explicitly justified"
+  }
+}

@@ -1,0 +1,38 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.9", "3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      # The engine is standard library only.  This job deliberately installs
+      # nothing, so a regression that introduces a dependency fails here.
+      - name: Run the regression suite
+        run: python3 tests/test_engine.py
+
+      - name: Render every template and audit it
+        run: |
+          set -e
+          for f in templates/*.yaml; do
+            name=$(basename "$f" .yaml)
+            python3 scripts/render.py "$f" -o "build/$name" -f svg,vsdx,pptx
+            python3 scripts/validate.py "$f" --svg "build/$name.svg"
+          done
+
+      - name: Check the stencil generator
+        run: python3 scripts/make_stencil.py -o build/stencil -f svg,vsdx,pptx
