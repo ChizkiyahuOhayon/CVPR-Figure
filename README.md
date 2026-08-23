@@ -16,6 +16,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/ChizkiyahuOhayon/cvpr-figure/actions/workflows/test.yml"><img alt="tests" src="https://github.com/ChizkiyahuOhayon/cvpr-figure/actions/workflows/test.yml/badge.svg"></a>
   <img alt="MIT licence" src="https://img.shields.io/badge/licence-MIT-blue.svg">
   <img alt="Python 3.8+" src="https://img.shields.io/badge/python-3.8%2B-blue.svg">
   <img alt="no dependencies" src="https://img.shields.io/badge/dependencies-none-brightgreen.svg">
