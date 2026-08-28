@@ -35,7 +35,8 @@ mkdir -p "$DEST"
 
 # Copy everything the skill needs at run time; leave repo furniture behind.
 for item in SKILL.md AGENTS.md manifest.yaml README.md README.zh-CN.md LICENSE \
-            static references scripts templates examples assets agents evals; do
+            CHANGELOG.md static references scripts templates examples assets \
+            agents evals tests; do
   [[ -e "$SRC/$item" ]] && cp -R "$SRC/$item" "$DEST/"
 done
 find "$DEST" -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
@@ -50,6 +51,11 @@ rm -f "$DEST/.selftest.svg"
 echo "  render OK"
 python3 "$DEST/scripts/validate.py" "$DEST/templates/pipeline-4stage.yaml" >/dev/null
 echo "  audit OK"
+if python3 "$DEST/tests/test_engine.py" >/dev/null 2>&1; then
+  echo "  self-test OK"
+else
+  echo "  self-test FAILED -- run python3 $DEST/tests/test_engine.py to see why"
+fi
 
 echo
 echo "Optional converters (for .pdf / .png / .tiff / .emf):"
