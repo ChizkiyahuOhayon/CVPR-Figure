@@ -140,6 +140,16 @@ class Figure(object):
                     sub.x += dx
                     sub.y += dy
 
+    @property
+    def fit_scale(self):
+        """Downscale the export will apply, known right after layout.
+
+        Available without rendering so a caller can reshape a draft before
+        committing to it -- see code2fig.emit.fit.
+        """
+        nat_w = max(self.natural_w, self.target)
+        return self.target / nat_w if nat_w > self.target + 0.01 else 1.0
+
     # ------------------------------------------------------------ render
     def render(self):
         """Draw the figure once and cache it; every exporter shares the result."""

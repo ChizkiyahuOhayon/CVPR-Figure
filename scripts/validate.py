@@ -35,7 +35,7 @@ PALETTE.update({"#FFFFFF", "#000000", "#C00000", "#B1001C", "#953735", "#2E75B6"
                 "#632523", "#205867", "#1E524A", "#3F3151", "#76923C", "#31859B"})
 
 MAX_LABEL_WORDS = 6
-MAX_HUE_FAMILIES = 5
+MAX_HUE_FAMILIES = 6      # corpus median is 5 distinct families, p75 is 9
 MAX_STROKE_WEIGHTS = 4
 
 
@@ -77,7 +77,7 @@ def check_legibility(fig, rep):
             rep.error("text-too-small",
                       "%r renders at %.1f pt (floor %.1f pt)"
                       % (it.spec["text"][:32], eff, style.MIN_RENDERED_PT), it.id)
-        elif eff < 6.0:
+        elif eff < style.WARN_RENDERED_PT:
             rep.warn("text-small",
                      "%r renders at %.1f pt; reviewers print at 100%%"
                      % (it.spec["text"][:32], eff), it.id)
@@ -222,10 +222,38 @@ def check_palette(fig, rep):
                 families.add(fam)
     if len(families) > MAX_HUE_FAMILIES:
         rep.warn("too-many-hues",
-                 "%d colour families in one figure (%s); published figures use <= %d "
-                 "so colour still means something"
+                 "%d colour families in one figure (%s); the reference corpus "
+                 "median is 5 and its 75th percentile is 9, so past %d colour "
+                 "has stopped meaning anything"
                  % (len(families), ", ".join(sorted(families)), MAX_HUE_FAMILIES))
     return used
+
+
+def check_real_content(fig, rep):
+    """Framework figures in this literature show real data, not just boxes.
+
+    57% of the architecture diagrams in the reference corpus embed at least
+    one raster -- median 11 of them, about a quarter of the canvas -- almost
+    always inputs on the left and predictions on the right.  A pure box
+    diagram is legal, but for anything pipeline-sized it is worth a nudge.
+    """
+    nodes = _boxes(fig)
+    if len(nodes) < 6:
+        return
+    slots = [it for it in nodes
+             if it.spec.get("shape") in ("image", "photo", "imagestack",
+                                         "imagegrid", "cameraring", "surroundview")]
+    if not slots:
+        rep.warn("no-real-content",
+                 "%d boxes and no image slot; 57%% of framework figures in the "
+                 "reference corpus show real inputs and predictions alongside the "
+                 "architecture (shape: image / cameraring / imagegrid)" % len(nodes))
+        return
+    empty = [it.id for it in slots if not it.spec.get("src") and not it.spec.get("srcs")]
+    if empty:
+        rep.warn("empty-image-slot",
+                 "%d image slot(s) have no `src`: %s -- these export as crossed "
+                 "placeholder boxes" % (len(empty), ", ".join(empty[:5])))
 
 
 def check_role_consistency(fig, rep):
@@ -321,9 +349,14 @@ def check_svg(path, rep):
 
 
 # ------------------------------------------------------------------ main
-def audit(spec_path, svg_path=None):
-    spec = load_path(spec_path)
-    fig = Figure(spec, base=os.path.dirname(os.path.abspath(spec_path)))
+def audit(spec_path, svg_path=None, base=None):
+    """Audit a spec given as a path or as an already-loaded dict."""
+    if isinstance(spec_path, dict):
+        spec, base = spec_path, base or os.getcwd()
+    else:
+        spec = load_path(spec_path)
+        base = base or os.path.dirname(os.path.abspath(spec_path))
+    fig = Figure(spec, base=base)
     fig.render()
     rep = Report()
     for w in fig.warnings:
@@ -335,6 +368,7 @@ def audit(spec_path, svg_path=None):
     check_reachability(fig, rep)
     check_shape(fig, rep)
     check_palette(fig, rep)
+    check_real_content(fig, rep)
     check_role_consistency(fig, rep)
     check_labels(fig, rep)
     check_strokes(fig, rep)

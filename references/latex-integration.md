@@ -17,7 +17,7 @@ Everything follows from that:
   keep `width=\linewidth` in LaTeX. Do **not** write
   `width=0.8\linewidth` — that shrinks the type to 5.6 pt.
 - Overflowing? The renderer scales the whole canvas down and *tells you the
-  effective point size*. Under 5.5 pt it raises an error. The fix is to shorten
+  effective point size*. Under 5.0 pt it raises an error. The fix is to shorten
   labels, drop a stage, or split the figure — not to accept the shrink.
 
 ## Column widths, verified

@@ -7,13 +7,16 @@ description: >-
   LaTeX. Use for architecture diagrams, method overview figures, framework figures,
   pipeline diagrams, teaser/paradigm-comparison figures, attention and token diagrams,
   module zoom-ins, and 顶会论文配图、框架图、流程图、pipeline图、方法图、teaser图、
-  网络结构图、模型架构图、科研绘图、论文示意图、Visio可编辑图. Works from a paper
-  section, an abstract, a method description, or source code. Drives a declarative
+  网络结构图、模型架构图、科研绘图、论文示意图、Visio可编辑图. Drives a declarative
   spec through a deterministic layout engine whose palette, typography and geometry
-  were measured out of published CVPR/ICCV/AAAI figures, then audits the result
-  against a checklist of the things that make a diagram look machine-generated.
-  Do not use for data plots — bar charts, curves, heatmaps, scatter and ablation
-  plots belong in matplotlib/seaborn; use those for quantitative results.
+  were measured out of 349 figure PDFs from published CVPR/ICCV/ECCV/AAAI papers,
+  then audits the result against a checklist of the things that make a diagram
+  look machine-generated. Works from a paper section, an abstract, a method
+  description, a PyTorch nn.Module source tree, or an mmengine/mmdet
+  `model = dict(...)` config —
+  根据代码出图、根据论文内容出图.  Do not use for data plots — bar charts, curves,
+  heatmaps, scatter and ablation plots belong in matplotlib/seaborn; use those
+  for quantitative results.
 ---
 
 # Conference figure making — router
@@ -33,6 +36,7 @@ Read fragments from disk as directed below. Do not work from memory of this file
 | bar chart, curve, heatmap, scatter, ablation plot, radar | not this skill — matplotlib/seaborn |
 | a graphical abstract for a *biomedical* journal | not this skill |
 | "make my figure Visio-editable" | continue here, jump to step 5 |
+| "draw the architecture from this code / config" | continue here, but start at step 3b |
 
 ## 1. Always load
 
@@ -76,6 +80,11 @@ wastes effort and loses the proportions that make the archetype work.
 | recurrent or streaming system | `templates/streaming-worldmodel.yaml` |
 | teacher–student, contrastive, EMA | `templates/dual-branch.yaml` |
 | adapter / gate / "we froze the rest" | `templates/gated-module.yaml` |
+| real inputs left, prediction right | `templates/framework-with-io.yaml` |
+| surround-camera / multi-view perception | `templates/surroundview-pipeline.yaml` |
+| which parameters train, which are frozen | `templates/trainable-frozen.yaml` |
+| distillation, teacher–student across modalities | `templates/teacher-student.yaml` |
+| a pipeline too long for one row | `templates/wrapped-pipeline.yaml` |
 
 **Analysis, evaluation and position papers** — the contribution is a
 measurement or a distinction, not a network:
@@ -87,12 +96,44 @@ measurement or a distinction, not a network:
 | a controlled 2 × 2 counterfactual or ablation | `templates/factorial-2x2.yaml` |
 | where this work sits in the field | `templates/taxonomy.yaml` |
 
+## 3b. Starting from code
+
+When the user points at a model implementation, draft the spec from the source
+rather than from a reading of it:
+
+```bash
+# a PyTorch package -- classes are found by parsing, never imported
+python3 scripts/from_code.py path/to/models/ --list        # what is in there
+python3 scripts/from_code.py path/to/models/ --model MyNet -o fig.yaml
+
+# an mmengine / mmdet / mmdet3d config -- usually the better source, because
+# it names every stage and its channel widths in pipeline order
+python3 scripts/from_code.py configs/model.py --mm -o fig.yaml
+```
+
+Neither reader imports or executes the code. The output is a **first draft**
+that gets the modules, their order and the branch structure right, and it will
+have been reshaped to fit the column — the command prints what it dropped or
+abbreviated to get there. Treat it as a starting spec, not an answer:
+
+- rename boxes to the names the paper uses, not the attribute names;
+- delete anything the paper does not discuss — the corpus median framework
+  figure has 11 boxes, and a faithful 30-module dump is unreadable;
+- attach real `src:` crops to the input and output slots;
+- check the arrows against what `forward` actually does, especially where the
+  reader reported a skipped branch.
+
+Then continue at step 4.
+
 ## 4. Write the spec
 
 Load [references/spec-language.md](references/spec-language.md) for the full
 grammar. Load [references/house-style.md](references/house-style.md) when you
-need a colour, a size or a stroke weight, or when the user asks *why* something
-looks the way it does. Load [references/case-studies.md](references/case-studies.md)
+need a colour, a size or a stroke weight, and
+[references/corpus-report.md](references/corpus-report.md) when the user asks
+*why* something looks the way it does — every constant in the engine is a
+measurement from 349 published figure PDFs and that document is the audit
+trail, including the rules that were tested and cut. Load [references/case-studies.md](references/case-studies.md)
 when the user names a paper whose figures they want to match.
 
 Working rules:
@@ -101,8 +142,12 @@ Working rules:
 - `role:` before `fill:` — reach for an explicit colour only when no role fits;
 - let the engine size boxes from their text; set `w`/`h` only for images,
   slabs and deliberate emphasis;
+- put real content in the figure: 57% of framework diagrams in the corpus
+  embed rasters, two thirds of them with inputs at the far left and
+  predictions at the far right (`shape: image`, `imagegrid`, `cameraring`);
 - `image` slots stay placeholders until the user supplies real crops — never
-  invent an output render;
+  invent an output render, and never pass off a crop from another paper as
+  your own result;
 - keep labels to noun phrases of six words or fewer.
 
 ## 5. Render
@@ -120,7 +165,10 @@ Use 600 dpi for camera-ready, 1200 for a poster.
 
 Read the report. It prints the canvas size, the node and edge counts, and — if
 the layout is wider than the column — the **effective point size** after
-scaling. Anything under 5.5 pt is a failure, not a warning to live with.
+scaling. Under 5.0 pt is a failure; 5.0–5.6 pt is a warning you should have a
+reason for. Those thresholds are the 29th and 40th percentiles of rendered
+glyph size in the reference corpus — see
+[references/corpus-report.md](references/corpus-report.md).
 
 For editing by hand afterwards, load
 [references/visio-workflow.md](references/visio-workflow.md). Generate the

@@ -1,5 +1,5 @@
 name: cvpr-figure
-version: 1.1.0
+version: 2.0.0
 description: >
   Declarative manifest for the static/dynamic split. SKILL.md and AGENTS.md use
   this to decide which fragments to load for a given figure request. The main
@@ -13,6 +13,7 @@ always_load:
 engine:
   entry: scripts/render.py
   auditor: scripts/validate.py
+  from_code: scripts/from_code.py
   stencil: scripts/make_stencil.py
   package: scripts/cvprfig
   runtime: python>=3.8, standard library only
@@ -57,6 +58,12 @@ axes:
       study:      templates/study-overview.yaml
       factorial:  templates/factorial-2x2.yaml
       taxonomy:   templates/taxonomy.yaml
+      # v2, from the 46-paper corpus scan
+      framework:  templates/framework-with-io.yaml
+      surround:   templates/surroundview-pipeline.yaml
+      frozen:     templates/trainable-frozen.yaml
+      distill:    templates/teacher-student.yaml
+      wrapped:    templates/wrapped-pipeline.yaml
     multi: false
 
 references:
@@ -75,6 +82,10 @@ references:
       path: references/visio-workflow.md
     - condition: placing the figure in LaTeX, sizing, float placement, camera-ready checks
       path: references/latex-integration.md
+    - condition: the user asks where a number, colour or threshold came from, or challenges the house style
+      path: references/corpus-report.md
+    - condition: drafting a figure from a model implementation or an mmengine/mmdet config
+      path: references/from-code.md
 
 templates:
   - templates/teaser-comparison.yaml
@@ -88,6 +99,11 @@ templates:
   - templates/study-overview.yaml
   - templates/factorial-2x2.yaml
   - templates/taxonomy.yaml
+  - templates/framework-with-io.yaml
+  - templates/surroundview-pipeline.yaml
+  - templates/trainable-frozen.yaml
+  - templates/teacher-student.yaml
+  - templates/wrapped-pipeline.yaml
   - templates/stencil.vsdx        # drag-and-drop module palette for Visio
   - templates/stencil.pptx        # ...and for PowerPoint
 

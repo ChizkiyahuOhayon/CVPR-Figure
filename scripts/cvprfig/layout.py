@@ -184,7 +184,44 @@ def measure_node(item, ctx):
     elif shape in ("circleop", "op"):
         d = float(s.get("d", 10.0)); w = h = d
     elif shape in ("image", "imagestack", "photo"):
-        w = float(s.get("w", 52.0)); h = float(s.get("h", 38.0))
+        # When a real asset is attached, let it set the aspect ratio.  A
+        # squashed input frame is the loudest tell in a generated figure.
+        asp = _src_aspect(s, ctx)
+        if s.get("w") and not s.get("h"):
+            w = float(s["w"]); h = w / asp
+        elif s.get("h") and not s.get("w"):
+            h = float(s["h"]); w = h * asp
+        elif not s.get("w") and not s.get("h"):
+            h = 38.0; w = h * asp
+        else:
+            w = float(s["w"]); h = float(s["h"])
+    elif shape in ("imagegrid",):
+        rows = int(s.get("rows", 1)); cols = int(s.get("cols", 3))
+        gap = float(s.get("cellgap", 1.8))
+        asp = _src_aspect(s, ctx)
+        cw = float(s.get("cell", 34.0))
+        w = cols * cw + (cols - 1) * gap
+        h = rows * (cw / asp) + (rows - 1) * gap
+    elif shape in ("cameraring", "surroundview"):
+        gap = float(s.get("cellgap", 1.6))
+        asp = _src_aspect(s, ctx, 1.6)
+        cw = float(s.get("cell", 30.0))
+        w = 3 * cw + 2 * gap
+        h = 2 * (cw / asp) + gap
+    elif shape in ("voxelgrid", "voxel"):
+        side = float(s.get("side", 34.0))
+        w = h = side + float(s.get("depth", style.GEOM["slab_depth"] * 1.7))
+    elif shape in ("planestack", "featmaps"):
+        n = int(s.get("n", 4))
+        w = float(s.get("w", 26.0)) + (n - 1) * float(s.get("offset", 3.0))
+        h = float(s.get("h", 34.0)) + (n - 1) * float(s.get("offset_y", 1.6))
+    elif shape == "gaussians":
+        w = float(s.get("w", 60.0)); h = float(s.get("h", 40.0))
+    elif shape == "marker":
+        d = float(s.get("d", style.GEOM["marker"])); w = h = d
+    elif shape == "lane":
+        w = float(s.get("w", max(tw + 2 * padx + 14.0, 60.0)))
+        h = float(s.get("h", max(th + 2 * pady, 16.0)))
     elif shape in ("framestrip",):
         from .shapes import frame_mask
         mask = frame_mask(s)
@@ -233,6 +270,21 @@ def measure_node(item, ctx):
         item.cap = ch + float(s.get("caption_gap", 3.0))
         item.h += item.cap
         item.w = max(item.w, cw)
+
+
+def _src_aspect(s, ctx, default=1.33):
+    """Aspect of the first attached asset, falling back to a sane default."""
+    if s.get("aspect"):
+        return float(s["aspect"])
+    src = s.get("src") or (s.get("srcs") or [None])[0]
+    if not src:
+        return default
+    import os
+    from . import imgsize
+    p = os.path.join(ctx.get("base", ""), src) if ctx.get("base") else src
+    if not os.path.exists(p):
+        return default
+    return imgsize.aspect(p, default)
 
 
 def measure(item, ctx):

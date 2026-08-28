@@ -8,13 +8,14 @@
 
 <p align="center">
   <b>Publication-grade pipeline, framework and teaser figures for AI conference papers.</b><br>
-  Write a short spec — get a figure that is <b>natively editable in Visio and PowerPoint</b>,
-  plus PDF for LaTeX and 600 dpi PNG.
+  Write a short spec — or point it at your model code — and get a figure that is
+  <b>natively editable in Visio and PowerPoint</b>, plus PDF for LaTeX and 600 dpi PNG.
 </p>
 
 <p align="center">
   <a href="#quickstart">Quickstart</a> ·
   <a href="#install">Install</a> ·
+  <a href="#from-code">From code</a> ·
   <a href="#the-template-gallery">Templates</a> ·
   <a href="#editing-the-output-visio-powerpoint-illustrator">Visio</a> ·
   <a href="#the-auditor">Auditor</a> ·
@@ -56,31 +57,60 @@ Every one of those is a *default*. `CVPR-Figure` removes them from the engine so
 they cannot come back by accident:
 
 - the palette, type sizes, stroke weights, corner radii and padding were
-  **measured out of the vector content of published CVPR/ICCV/AAAI PDFs**, not
-  invented (see [`references/house-style.md`](references/house-style.md));
+  **measured out of the vector content of 349 published figure PDFs**, not
+  invented — the full audit trail, including three rules that were tested and
+  cut for lack of evidence, is in
+  [`references/corpus-report.md`](references/corpus-report.md);
 - layout is solved deterministically **in final printed points** — `size: 7.0`
   in the spec is 7.0 pt on the printed page, with no mental arithmetic;
 - arrows are *forced* to leave and enter along port normals and turn at right
   angles;
 - an **auditor** must pass before you ship, and it names each tell individually.
 
-### The finding that set the palette
+### The findings that set the style
 
-Taking the SparseWorld, GaussianWorld, EmbodiedOcc, StreamVGGT and TPVFormer
-figures apart with PyMuPDF: the fills are **exactly the Microsoft Office theme
-tint ladder**, and the embedded font tables still carry `SimSun`, `SimHei` and
-`Calibri`. Those figures were drawn in a Chinese-locale **PowerPoint**.
+v2 re-derived every constant from a wider corpus: **46 papers** with complete
+arXiv sources from three groups whose figures this project is trying to sound
+like — Tsinghua MARS, Wenzhao Zheng's group, and Megvii — covering **292 figure
+environments** and **349 figure PDFs**, read with PyMuPDF.
+
+**Almost nobody draws in TikZ.** One of 290 figures uses `tikzpicture`, and it
+is an ablation bar chart, not a diagram. Every architecture figure in the
+corpus is external artwork placed with `\includegraphics`, and 86% are a
+*single* file — the
+composition happens in the drawing tool, not in LaTeX. The embedded font tables
+say which tool: Calibri and Cambria Math (PowerPoint/Visio), Segoe Print
+(Windows), Times New Roman PS MT set by hand. So generating a native
+`.pptx`/`.vsdx` with an Office palette is not a stylistic preference — it is a
+reconstruction of the actual production pipeline.
+
+**The palette is three colour pickers, not one.** 101 colours appear in four or
+more distinct figures, and they resolve cleanly into the Office 2013+ theme
+ladder, the diagrams.net stock styles (which ship as fill/stroke *pairs*), and
+matplotlib's `tab10` confined to plot panels. `palettes.py` keeps all three
+whole rather than blending them:
 
 ```
-#92CDDC #B7DDE8 #DBEEF3   Office Accent5 at 40 / 60 / 80 % lighter
-#FFD965 #FFE699 #FFF2CC   gold, same ladder
-#ED7D31 #F8CBAD #FBE5D6   orange, same ladder
-strokes: #000000 × 1191 occurrences, next colour × 20
+#DEEBF7 #BDD7EE #9DC3E6 #5B9BD5 #2E75B6   Office Blue Accent 5, verbatim
+#E2F0D9 #C5E0B4 #A9D18E #70AD47 #548235   Green Accent 6
+#FFF2CC #FFE699 #FFD966 #FFC000 #BF9000   Gold Accent 4
+#DAE8FC / #6C8EBF   #D5E8D4 / #82B366     draw.io pairs -- never split
+strokes: 45% of all stroke length is pure #000000
 ```
 
-So this project uses the colour chips the authors actually clicked, rather than
-a "nicer" invented palette — which reads as foreign immediately — and treats
-`.pptx` export as a first-class output rather than a convenience.
+**Type is smaller than anyone admits.** Applying each figure's own
+canvas-to-column scale factor (median 0.385), the rendered glyph distribution
+has a median of **6.0 pt** and quartiles at 4.5 and 7.5. The median *smallest*
+glyph in a figure is 5.4 pt. That set the auditor's 5.0 pt floor — and it also
+showed v1's stroke weights were about **2× too heavy**, since the real rendered
+modes are 0.19, 0.36, 0.45 and 0.80 pt.
+
+**Framework figures contain real data.** 57% of the architecture diagrams embed
+at least one raster — median **11** of them, about a quarter of the canvas — and
+**66% of those put images at both the far left and the far right**. Inputs in,
+predictions out, architecture between. That is why `image`, `imagegrid` and
+`cameraring` exist, why `image` takes its aspect ratio from the real file, and
+why the auditor nudges a pipeline drawn as boxes alone.
 
 ---
 
@@ -272,6 +302,80 @@ test, trace one path with a finger, cover the caption, convert to greyscale.
 
 ---
 
+## From code
+
+<a name="from-code"></a>
+
+Point it at a model implementation and get a first-draft spec. **Nothing is
+imported or executed** — both readers parse with `ast`, so there is no
+dependency install, no checkpoint download and no CUDA.
+
+```bash
+# what model classes are in this package?
+python3 scripts/from_code.py bevdepth/layers/ --list
+
+# draw one
+python3 scripts/from_code.py bevdepth/layers/ --model DepthNet -o fig.yaml
+python3 scripts/render.py fig.yaml -o build/depthnet -f svg,pdf,pptx
+```
+
+<p align="center">
+  <img src="assets/gallery/from-code-depthnet.png" width="94%"
+       alt="A figure generated directly from DepthNet's PyTorch source: two colour-coded parallel branches, Sequential contents as captions">
+</p>
+
+That is `DepthNet` straight out of BEVDepth with no hand editing. The reader
+recovered the two parallel branches from `forward`, pulled the `nn.Sequential`
+contents into the captions, pruned the norm/dropout plumbing, and coloured the
+branches apart because the module names gave role inference nothing to work
+with.
+
+If the model ships an **mmengine / mmdet / mmdet3d config**, use that instead —
+it names every stage in pipeline order with its channel widths, and it is a far
+better source than the class hierarchy:
+
+```bash
+python3 scripts/from_code.py configs/model.py --mm -o fig.yaml
+```
+
+### It fits the column for you
+
+A draft wider than its column gets silently downscaled at render time, and
+downscaling is exactly how figures end up with 5 pt labels. So the emitter
+measures its own draft and reshapes it, reporting each concession:
+
+```
+$ python3 scripts/from_code.py configs/sparseworld.py --mm -o fig.yaml
+  7 nodes, 6 edges, 7 layers from BEVStereo4DOCC
+  fit: dropped channel captions; abbreviated module names;
+       dropped 1 peripheral modules to fit the column
+```
+
+In order: drop the channel captions, abbreviate names the way the corpus writes
+them (`img_bev_encoder_backbone` → `BEV Enc. Backbone`), shed the least
+connected boxes, and only as a last resort fold into two bands with a proper
+return sweep.
+
+### It is a draft, not an answer
+
+The reader gets the modules, their order and the branch structure right. It has
+no idea which module is your contribution. Before you ship, expect to:
+
+- rename boxes to the names the *paper* uses, not the attribute names;
+- delete anything the paper does not discuss — the corpus median framework
+  figure has **11** boxes;
+- attach real `src:` crops to the input and output slots;
+- check cross-branch arrows against what `forward` actually does;
+- give the contribution `role: core` and its own panel.
+
+Known limits are written down rather than glossed:
+[`references/from-code.md`](references/from-code.md) lists what the reader
+flattens (both arms of an `if`), what it cannot see (functional calls,
+`_base_` config inheritance) and what it guesses (`for blk in self.blocks`
+becomes `×N`, because the count is not in the source).
+
+---
+
 ## The template gallery
 
 Copy the one closest to your figure and replace the content. Starting from a
@@ -312,6 +416,36 @@ not been factored cleanly.
 <td colspan="2"><a href="templates/gated-module.yaml"><img src="assets/gallery/gated-module.png" width="49%" alt="gated-module"></a>
 <br><b><code>gated-module</code></b> — <i>"What did you change and what did you freeze?"</i><br>
 Adapters, LoRA, FiLM, calibration heads. One frozen lane passes through; the others are modulated by gates. The operators are staggered horizontally so each gate rises straight into the one it drives and <b>no two arrows cross</b>. Single column.</td>
+</tr>
+</table>
+
+### Real inputs and real predictions — the corpus default
+
+57% of the framework diagrams in the reference corpus embed rasters, and two
+thirds of those put images at both ends. These five templates are built around
+that.
+
+<table>
+<tr>
+<td colspan="2"><a href="templates/framework-with-io.yaml"><img src="assets/gallery/framework-with-io.png" alt="framework-with-io"></a>
+<br><b><code>framework-with-io</code></b> — <i>"What goes in and what comes out?"</i><br>
+The dominant shape in the corpus: real crops on the left, the architecture across the middle, real predictions on the right. Point <code>src:</code> at your own frames and renders — <code>image</code> reads the aspect ratio from the file, so you give width only. Double column.</td>
+</tr>
+<tr>
+<td width="50%"><a href="templates/surroundview-pipeline.yaml"><img src="assets/gallery/surroundview-pipeline.png" alt="surroundview-pipeline"></a></td>
+<td width="50%"><a href="templates/teacher-student.yaml"><img src="assets/gallery/teacher-student.png" alt="teacher-student"></a></td>
+</tr>
+<tr>
+<td><b><code>surroundview-pipeline</code></b><br><i>Multi-camera perception.</i><br><code>cameraring</code> lays six views out the way the nuScenes and Waymo papers do — three forward, three rear, ego glyph between — feeding a <code>voxelgrid</code> BEV volume. Double column.</td>
+<td><b><code>teacher-student</code></b><br><i>"How does the student learn from the teacher?"</i><br>Two branches on the same rhythm, distillation losses tied at matched depths rather than one arrow at the end. Double column.</td>
+</tr>
+<tr>
+<td><a href="templates/trainable-frozen.yaml"><img src="assets/gallery/trainable-frozen.png" alt="trainable-frozen"></a></td>
+<td><a href="templates/wrapped-pipeline.yaml"><img src="assets/gallery/wrapped-pipeline.png" alt="wrapped-pipeline"></a></td>
+</tr>
+<tr>
+<td><b><code>trainable-frozen</code></b><br><i>"Which parameters move?"</i><br>The flame/snowflake convention, drawn as <b>vector paths rather than pasted emoji</b>, so they stay sharp at 600 dpi and survive PDF/A. Arrow colour follows the marker. Double column.</td>
+<td><b><code>wrapped-pipeline</code></b><br><i>A pipeline too long for one row.</i><br>Folded into two bands. The fold leaves the <em>bottom</em> of the upper band and enters the <em>top</em> of the lower one, so the horizontal leg runs through the empty gap instead of straight through the boxes. Single column.</td>
 </tr>
 </table>
 
@@ -420,7 +554,7 @@ python3 scripts/validate.py spec.yaml --svg build/fig.svg [--strict] [--json]
 
 | Code | Level | What it catches |
 |---|---|---|
-| `text-too-small` | error | anything under 5.5 pt **at final printed size** |
+| `text-too-small` | error | anything under 5.0 pt **at final printed size** |
 | `label-overflow` | error | text wider than its box |
 | `node-overlap` | error | two siblings occupying the same space |
 | `inconsistent-role` | error | one concept drawn in two different fills |
@@ -512,31 +646,41 @@ static/core/
   contract.md             the seven questions to answer before drawing
 
 references/
+  corpus-report.md        every measurement, with the rules that were cut
   house-style.md          the measured palette, type and strokes — and the method
   spec-language.md        the full spec grammar
-  archetypes.md           eleven archetypes and what makes each one work
-  case-studies.md         five published figures taken apart
+  archetypes.md           the archetypes and what makes each one work
+  from-code.md            drafting from source: what it infers, where it is wrong
+  case-studies.md         published figures taken apart
   anti-ai-checklist.md    the automated checks plus the eye pass
   visio-workflow.md       Visio / PowerPoint / Illustrator editing
   latex-integration.md    sizing, floats, camera-ready checks
 
 scripts/
   render.py               spec -> svg / pdf / png / tiff / emf / vsdx / pptx
+  from_code.py            PyTorch source or mmdet config -> spec
   validate.py             the auditor
   make_stencil.py         the module palette generator
   cvprfig/                the engine (standard library only)
-    style.py              palette, typography, strokes, geometry constants
+    palettes.py           the three measured colour systems, kept apart
+    style.py              typography, strokes, geometry, roles
     text.py               baked Adobe Core-14 metrics + inline markup
+    imgsize.py            PNG/JPEG/GIF/PDF dimensions, no dependencies
     layout.py             the box-model solver
     edges.py              orthogonal routing
     shapes.py             the shape vocabulary
     svg.py vsdx.py pptx.py   three renderers over one layout
     miniyaml.py           dependency-free YAML subset parser
+    code2fig/             graph IR, two source readers, spec emitter
+      graph.py            the IR, role inference, pruning, branch colouring
+      torchscan.py        nn.Module source -> graph, via ast
+      mmconfig.py         mmengine/mmdet config -> graph, via ast
+      emit.py             graph -> spec, with the column-fitting ladder
 
-templates/                eleven archetypes + stencil.vsdx / stencil.pptx
+templates/                sixteen archetypes + stencil.vsdx / stencil.pptx
 examples/quickstart.yaml  the 50-line example above
 assets/gallery/           rendered previews
-tests/test_engine.py      105 regression checks
+tests/test_engine.py      regression checks (engine, exporters, auditor, code2fig)
 ```
 
 ---
@@ -547,12 +691,14 @@ tests/test_engine.py      105 regression checks
 python3 tests/test_engine.py
 ```
 
-105 checks, no dependencies, about two seconds. They cover text metrics against a
+167 checks, no dependencies, about two seconds. They cover text metrics against a
 published box width, the bundled YAML parser (byte-identical output to PyYAML),
 layout snapping, port-normal routing, colour and named-stroke resolution, nested
-container forms, every shape, all eleven templates rendering *and passing the
-auditor*, `.vsdx` / `.pptx` package structure and shape counts, and the
-auditor's own positive and negative cases.
+container forms, every shape, all sixteen templates rendering *and passing the
+auditor*, `.vsdx` / `.pptx` package structure and shape counts, raster embedding
+and real-aspect sizing, both code readers end to end (submodules, dataflow
+edges, branch survival, plumbing pruning, role inference, config annotations),
+the column-fitting ladder, and the auditor's own positive and negative cases.
 
 CI runs them on Python 3.9, 3.11 and 3.13 with **nothing installed**, so a
 regression that introduces a dependency fails the build.
@@ -596,7 +742,7 @@ WARNING: Layout is 539.6 pt wide but the target column is 504.0 pt,
          so the figure is scaled to 93%; body labels render at ~6.5 pt.
 ```
 
-Below 5.5 pt that becomes an error. The fix is to shorten labels, drop a stage,
+Below 5.0 pt that becomes an error. The fix is to shorten labels, drop a stage,
 or split the figure — not to accept the shrink.
 </details>
 

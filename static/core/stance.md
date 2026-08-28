@@ -22,7 +22,7 @@ skill overrides them in the engine so they cannot come back by accident.
 ## Non-negotiables
 
 1. **Design at final size.** All type sizes in a spec are in final rendered
-   points on the printed page. 6.5–8 pt is the working range; below 5.5 pt the
+   points on the printed page. 6.5–8 pt is the working range; below 5.0 pt the
    renderer refuses to stay silent. Never draw large and shrink.
 2. **Colour carries meaning or it is grey.** A hue is spent on a semantic role
    — the contribution, a data stream, a stage — and that role keeps the same

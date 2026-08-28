@@ -52,23 +52,46 @@ AI 生成的框架图不是"丑"，而是**通用**。审稿人一秒就能认�
 
 上面每一条都是**默认行为**。`CVPR-Figure` 的做法不是"提示模型别这么画"，而是**把这些默认从引擎里拆掉**：
 
-- 配色、字号、线宽、圆角、内边距，全部是用 PyMuPDF **从已发表 CVPR/ICCV/AAAI 论文 PDF 的矢量内容里量出来的**，不是自己编的（方法与数值见 [`references/house-style.md`](references/house-style.md)）；
+- 配色、字号、线宽、圆角、内边距，全部是用 PyMuPDF **从 349 张已发表论文配图 PDF 的矢量内容里量出来的**，不是自己编的——完整的证据链，包括三条因证据不足而被砍掉的规则，在 [`references/corpus-report.md`](references/corpus-report.md)；
 - 版面由确定性求解器计算，**单位是最终印刷磅值**——spec 里写 `size: 7.0`，纸上就是 7.0 pt，不需要心算；
 - 箭头被**强制**沿端口法向进出、直角转折；
 - 交付前必须过**审计器**，它会把上面那些特征逐条点名。
 
-### 一个决定了配色的发现
+### 决定了这套风格的几个发现
 
-把 SparseWorld、GaussianWorld、EmbodiedOcc、StreamVGGT、TPVFormer 的图用 PyMuPDF 拆开看：填充色**恰好是 Microsoft Office 主题色的 tint 阶梯**，字体表里还残留着 `SimSun`、`SimHei`、`Calibri`——这些图是用**中文版 PowerPoint** 画的。
+v2 用一个更大的语料库把每一个常量重新推导了一遍：**46 篇**有完整 arXiv 源码的论文，
+来自三个本项目想要靠近的组——清华 MARS、郑文钊组、旷视 Megvii——覆盖 **292 个 figure
+环境**和 **349 张配图 PDF**，全部用 PyMuPDF 读取。
+
+**几乎没人用 TikZ 画图。** 290 张图里只有 1 张用了 `tikzpicture`，而且是个消融柱状图。
+所有架构图无一例外都是外部矢量稿，用 `\includegraphics` 放进去，其中 86% 是**单个文件**
+——拼版发生在绘图软件里，不在 LaTeX 里。嵌入的字体表直接说明了是什么软件：Calibri 和
+Cambria Math（PowerPoint / Visio）、Segoe Print（Windows）、手动设置的 Times New Roman
+PS MT。所以"生成原生 `.pptx`/`.vsdx` + Office 色卡"不是一种审美偏好，而是在**复现真实的
+生产流程**。
+
+**配色是三套取色板，不是一套。** 有 101 种颜色出现在四张以上不同的图里，它们干净地
+分解成三组：Office 2013+ 主题阶梯、diagrams.net 的默认样式（它是成对的
+填充/描边，**不能拆开**）、以及只出现在数据图里的 matplotlib `tab10`。`palettes.py`
+把三套各自保持完整，不做混合：
 
 ```
-#92CDDC #B7DDE8 #DBEEF3   Office Accent5 的 40 / 60 / 80% 变浅
-#FFD965 #FFE699 #FFF2CC   gold，同一阶梯
-#ED7D31 #F8CBAD #FBE5D6   orange，同一阶梯
-描边：#000000 出现 1191 次，第二名的颜色只有 20 次
+#DEEBF7 #BDD7EE #9DC3E6 #5B9BD5 #2E75B6   Office Blue Accent 5，一模一样
+#E2F0D9 #C5E0B4 #A9D18E #70AD47 #548235   Green Accent 6
+#FFF2CC #FFE699 #FFD966 #FFC000 #BF9000   Gold Accent 4
+#DAE8FC / #6C8EBF   #D5E8D4 / #82B366     draw.io 的成对样式——不要拆
+描边：全部描边长度的 45% 是纯 #000000
 ```
 
-所以本项目直接采用作者真正点过的那套色卡，而不是"更好看"的自创配色——后者一眼就不像；同时把 `.pptx` 导出做成一等公民，而不是附赠功能。
+**字号比所有人以为的都小。** 把每张图自己的"画布→栏宽"缩放系数（中位数 0.385）算进去
+之后，最终印在纸上的字号中位数是 **6.0 pt**，四分位是 4.5 和 7.5；每张图里**最小**那个
+字号的中位数是 5.4 pt。这直接定下了审计器 5.0 pt 的下限——同时也暴露出 v1 的线宽**大约
+粗了一倍**，因为实测的印刷线宽众数是 0.19、0.36、0.45、0.80 pt。
+
+**框架图里有真实数据。** 57% 的架构图至少嵌了一张位图——中位数 **11 张**、占画布约四分之一
+——而且这些图里 **66% 在最左和最右两端都放了图像**。输入进去，预测出来，架构在中间。
+这就是 `image`、`imagegrid`、`cameraring` 存在的原因，也是 `image` 会从真实文件读取宽高比
+的原因，更是审计器会提醒"纯方块 pipeline 图"的原因。
 
 ---
 
@@ -245,6 +268,69 @@ python3 scripts/validate.py spec.yaml --svg build/fig.svg
 
 ---
 
+## 根据代码出图
+
+把它指向一份模型实现，直接拿到一份 spec 初稿。**全程不 import、不执行**——两个 reader
+都用 `ast` 解析，所以不需要装依赖、不需要下载权重、不需要 CUDA。
+
+```bash
+# 这个包里有哪些模型类？
+python3 scripts/from_code.py bevdepth/layers/ --list
+
+# 画其中一个
+python3 scripts/from_code.py bevdepth/layers/ --model DepthNet -o fig.yaml
+python3 scripts/render.py fig.yaml -o build/depthnet -f svg,pdf,pptx
+```
+
+<p align="center">
+  <img src="assets/gallery/from-code-depthnet.png" width="94%"
+       alt="直接从 DepthNet 的 PyTorch 源码生成的图：两条并行分支被自动着色区分">
+</p>
+
+这是 BEVDepth 里的 `DepthNet`，没有任何手工编辑。reader 从 `forward` 里恢复了两条并行
+分支，把 `nn.Sequential` 的内容提到了 caption 里，剪掉了 norm/dropout 这类管道模块，
+并且因为模块名无法推断语义角色，就按**分支**给它们上了不同的颜色。
+
+如果代码带 **mmengine / mmdet / mmdet3d 的 config**，优先用它——config 按 pipeline 顺序
+写明了每一个 stage 和通道数，比类继承关系好得多：
+
+```bash
+python3 scripts/from_code.py configs/model.py --mm -o fig.yaml
+```
+
+### 它会自己把图塞进栏宽
+
+草稿一旦超出栏宽，渲染时就会被静默缩放，而缩放正是图上出现 5 pt 小字的直接原因。所以
+emitter 会先量自己的草稿，然后按顺序改形，并把每一步让步都报告出来：
+
+```
+$ python3 scripts/from_code.py configs/sparseworld.py --mm -o fig.yaml
+  7 nodes, 6 edges, 7 layers from BEVStereo4DOCC
+  fit: dropped channel captions; abbreviated module names;
+       dropped 1 peripheral modules to fit the column
+```
+
+顺序是：去掉通道数 caption → 按语料库的写法缩写名字（`img_bev_encoder_backbone` →
+`BEV Enc. Backbone`）→ 砍掉连接度最低的方块 → 实在不行才折成两行（并带一个正确的回折
+箭头）。
+
+### 它是初稿，不是答案
+
+reader 能把模块、顺序、分支结构搞对，但它**不知道哪一个是你的贡献**。交付前你需要：
+
+- 把方块改成**论文里**用的名字，不是属性名；
+- 删掉论文没讨论的东西——语料库里框架图的中位数是 **11** 个方块；
+- 给输入输出槽位挂上真实的 `src:` 图；
+- 拿 `forward` 核对跨分支的箭头；
+- 给贡献模块标上 `role: core`，并单独给它一个 panel。
+
+已知的局限都写下来了，没有含糊：[`references/from-code.md`](references/from-code.md)
+列出了 reader 会拍平什么（`if` 的两个分支都会画出来）、看不见什么（functional 调用、
+config 的 `_base_` 继承）、以及靠猜的部分（`for blk in self.blocks` 变成 `×N`，因为
+源码里没有这个数）。
+
+---
+
 ## 模板库
 
 复制最接近的那个，然后替换内容。从空白 spec 开始既费劲，又会丢掉让这个原型成立的比例关系。
@@ -282,6 +368,35 @@ python3 scripts/validate.py spec.yaml --svg build/fig.svg
 <td colspan="2"><a href="templates/gated-module.yaml"><img src="assets/gallery/gated-module.png" width="49%" alt="gated-module"></a>
 <br><b><code>gated-module</code></b> —— <i>"你到底改了什么、冻了什么？"</i><br>
 adapter、LoRA、FiLM、校准头。一条泳道冻结直通，其余被门控调制。两个算子**水平错开**，让每个门控从正下方垂直进入它驱动的那个算子，<b>零交叉</b>。单栏。</td>
+</tr>
+</table>
+
+### 真实输入与真实预测——语料库里的默认形态
+
+语料库里 57% 的框架图嵌了真实位图，其中三分之二在两端都放了图像。下面这五个模板就是
+围绕这一点做的。
+
+<table>
+<tr>
+<td colspan="2"><a href="templates/framework-with-io.yaml"><img src="assets/gallery/framework-with-io.png" alt="framework-with-io"></a>
+<br><b><code>framework-with-io</code></b> — <i>"输入是什么，输出是什么？"</i><br>
+语料库里最主流的形态：左边真实输入，中间架构，右边真实预测。把 <code>src:</code> 指向你自己的帧和渲染结果——<code>image</code> 会从文件读宽高比，所以只给宽度就够了。双栏。</td>
+</tr>
+<tr>
+<td width="50%"><a href="templates/surroundview-pipeline.yaml"><img src="assets/gallery/surroundview-pipeline.png" alt="surroundview-pipeline"></a></td>
+<td width="50%"><a href="templates/teacher-student.yaml"><img src="assets/gallery/teacher-student.png" alt="teacher-student"></a></td>
+</tr>
+<tr>
+<td><b><code>surroundview-pipeline</code></b><br><i>环视感知。</i><br><code>cameraring</code> 按 nuScenes / Waymo 论文的惯例排布六路视角——前三后三、中间自车图标——喂给 <code>voxelgrid</code> 的 BEV 体素。双栏。</td>
+<td><b><code>teacher-student</code></b><br><i>"student 怎么从 teacher 学？"</i><br>两条同节奏的分支，蒸馏 loss 在对应深度上横向连接，而不是在末尾拉一根箭头。双栏。</td>
+</tr>
+<tr>
+<td><a href="templates/trainable-frozen.yaml"><img src="assets/gallery/trainable-frozen.png" alt="trainable-frozen"></a></td>
+<td><a href="templates/wrapped-pipeline.yaml"><img src="assets/gallery/wrapped-pipeline.png" alt="wrapped-pipeline"></a></td>
+</tr>
+<tr>
+<td><b><code>trainable-frozen</code></b><br><i>"哪些参数在训？"</i><br>火焰 / 雪花约定，但画成<b>矢量路径而不是贴进去的 emoji</b>，所以 600 dpi 下依然锐利，也能过 PDF/A。箭头颜色跟着标记走。双栏。</td>
+<td><b><code>wrapped-pipeline</code></b><br><i>一行放不下的 pipeline。</i><br>折成两行。回折从上一行的<em>底部</em>出、进下一行的<em>顶部</em>，横向那一段就走在两行之间的空白里，而不是从方块中间穿过去。单栏。</td>
 </tr>
 </table>
 
@@ -377,7 +492,7 @@ python3 scripts/validate.py spec.yaml --svg build/fig.svg [--strict] [--json]
 
 | 代码 | 级别 | 抓什么 |
 |---|---|---|
-| `text-too-small` | error | **最终印刷尺寸**下小于 5.5 pt 的文字 |
+| `text-too-small` | error | **最终印刷尺寸**下小于 5.0 pt 的文字（语料库第 29 百分位）|
 | `label-overflow` | error | 文字比框还宽 |
 | `node-overlap` | error | 两个兄弟节点占同一块地方 |
 | `inconsistent-role` | error | 同一个概念画成了两种颜色 |
@@ -463,31 +578,41 @@ static/core/
   contract.md             动笔前必须回答的七个问题
 
 references/
+  corpus-report.md        每一项测量，以及被砍掉的规则
   house-style.md          量出来的配色/字号/线宽，以及测量方法本身
   spec-language.md        spec 完整语法
-  archetypes.md           十一个原型，以及各自的成败关键
-  case-studies.md         五篇论文的图逐张拆解
+  archetypes.md           各个原型，以及各自的成败关键
+  from-code.md            从源码出图：它推断什么、在哪里会错
+  case-studies.md         已发表论文的图逐张拆解
   anti-ai-checklist.md    自动审计项 + 人眼复核流程
   visio-workflow.md       Visio / PowerPoint / Illustrator 编辑
   latex-integration.md    尺寸换算、浮动体、camera-ready 检查
 
 scripts/
   render.py               spec -> svg / pdf / png / tiff / emf / vsdx / pptx
+  from_code.py            PyTorch 源码或 mmdet config -> spec
   validate.py             审计器
   make_stencil.py         模块面板生成器
   cvprfig/                引擎（纯标准库）
-    style.py              色板、字号、线宽、几何常量
+    palettes.py           三套实测色板，各自保持完整
+    style.py              字号、线宽、几何常量、语义角色
     text.py               烘焙好的 Adobe Core-14 字宽 + 行内标记
+    imgsize.py            PNG/JPEG/GIF/PDF 尺寸读取，零依赖
     layout.py             盒模型求解器
     edges.py              正交路由
     shapes.py             形状词汇表
     svg.py vsdx.py pptx.py   同一套版面的三个渲染后端
     miniyaml.py           零依赖 YAML 子集解析器
+    code2fig/             图 IR、两个源码 reader、spec 生成器
+      graph.py            IR、角色推断、剪枝、分支着色
+      torchscan.py        nn.Module 源码 -> 图（走 ast）
+      mmconfig.py         mmengine/mmdet config -> 图（走 ast）
+      emit.py             图 -> spec，含栏宽自适应阶梯
 
-templates/                十一个原型 + stencil.vsdx / stencil.pptx
+templates/                十六个原型 + stencil.vsdx / stencil.pptx
 examples/quickstart.yaml  上面那个 50 行示例
 assets/gallery/           渲染预览
-tests/test_engine.py      105 项回归测试
+tests/test_engine.py      回归测试（引擎、导出器、审计器、code2fig）
 ```
 
 ---
@@ -498,7 +623,7 @@ tests/test_engine.py      105 项回归测试
 python3 tests/test_engine.py
 ```
 
-105 项检查，零依赖，约两秒。覆盖：字宽测量对照已发表论文的实际框宽、内置 YAML 解析器（与 PyYAML 输出逐字节一致）、版面吸附、端口法向路由、颜色与具名线宽解析、容器嵌套形式、每一种形状、十一个模板的渲染**并且通过审计**、`.vsdx` / `.pptx` 包结构与形状数量、审计器自身的正反例。
+167 项检查，零依赖，约两秒。覆盖：字宽测量对照已发表论文的实际框宽、内置 YAML 解析器（与 PyYAML 输出逐字节一致）、版面吸附、端口法向路由、颜色与具名线宽解析、容器嵌套形式、每一种形状、**十六个**模板的渲染**并且通过审计**、`.vsdx` / `.pptx` 包结构与形状数量、位图嵌入与真实宽高比、两个代码 reader 的端到端行为（子模块、数据流边、分支保留、管道模块剪枝、角色推断、config 注释）、栏宽自适应阶梯，以及审计器自身的正反例。
 
 CI 在 Python 3.9 / 3.11 / 3.13 上**不装任何依赖**跑这些测试，所以一旦有人引入依赖，构建会直接失败。
 
@@ -534,7 +659,7 @@ WARNING: Layout is 539.6 pt wide but the target column is 504.0 pt,
          so the figure is scaled to 93%; body labels render at ~6.5 pt.
 ```
 
-低于 5.5 pt 就升级成 error。正确的解法是缩短标签、砍掉一个阶段、或者拆成两张图——不是接受这个缩放。
+低于 5.0 pt 就升级成 error。正确的解法是缩短标签、砍掉一个阶段、或者拆成两张图——不是接受这个缩放。
 </details>
 
 <details>

@@ -399,6 +399,242 @@ def _dist(cv, s, x, y, w, h, fill, stroke, sw, dash, tc, ctx):
                       s["_bold"], s["_italic"], tc)
 
 
+
+# ==========================================================================
+# v2 vocabulary.  Every idiom below was counted in the reference corpus
+# before it was implemented; see references/corpus-report.md for how often.
+# ==========================================================================
+
+def _iso(x, y, dx, dy):
+    return (x + dx, y - dy)
+
+
+def _voxelgrid(cv, s, x, y, w, h, fill, stroke, sw, dash, tc, ctx):
+    """Isometric cube subdivided into a g x g x g voxel lattice.
+
+    The standard way this corpus draws a dense 3D feature volume: 26 of the
+    137 diagrams contain one.  ``colors`` paints individual top-face cells so
+    a figure can show occupancy or attention over the volume.
+    """
+    g = int(s.get("grid", 3))
+    d = float(s.get("depth", style.GEOM["slab_depth"] * 1.7))
+    side = min(w - d, h - d)
+    cx, cy = x, y + d
+    cell = side / g
+    step = d / g
+    top = _shade(fill, 1.16)
+    rgt = _shade(fill, 0.88)
+    colors = s.get("colors")
+
+    def cell_fill(i, j, face):
+        if isinstance(colors, list) and colors:
+            return style.resolve_color(colors[(i * g + j) % len(colors)], fill)
+        return {"f": fill, "t": top, "r": rgt}[face]
+
+    # front face, then top, then right -- painter order keeps seams clean
+    for i in range(g):
+        for j in range(g):
+            svg.rect(cv, cx + j * cell, cy + i * cell, cell, cell, 0,
+                     cell_fill(i, j, "f"), stroke, sw)
+    for i in range(g):
+        for j in range(g):
+            x0, y0 = cx + j * cell + i * step, cy - i * step
+            svg.poly(cv, [(x0, y0), (x0 + step, y0 - step),
+                          (x0 + step + cell, y0 - step), (x0 + cell, y0)],
+                     cell_fill(i, j, "t"), stroke, sw)
+    for i in range(g):
+        for j in range(g):
+            x0, y0 = cx + side + j * step, cy + i * cell - j * step
+            svg.poly(cv, [(x0, y0), (x0 + step, y0 - step),
+                          (x0 + step, y0 - step + cell), (x0, y0 + cell)],
+                     cell_fill(i, j, "r"), stroke, sw)
+    if s.get("text"):
+        _label(cv, s, x, y, w, h, tc)
+
+
+def _planestack(cv, s, x, y, w, h, fill, stroke, sw, dash, tc, ctx):
+    """Overlapping translucent planes: a multi-scale feature pyramid.
+
+    GaussianFormer, CVT-Occ and PETR all draw multi-scale features this way --
+    3-5 parallelograms offset diagonally, dashed outline, low opacity.
+    """
+    n = int(s.get("n", 4))
+    k = float(s.get("skew", 0.22)) * w
+    dx = float(s.get("offset", 3.0))
+    dy = float(s.get("offset_y", 1.6))
+    colors = s.get("colors")
+    op = s.get("opacity", 0.85)
+    pw = w - (n - 1) * dx - k
+    ph = h - (n - 1) * dy
+    for i in range(n - 1, -1, -1):
+        f = fill
+        if isinstance(colors, list) and colors:
+            f = style.resolve_color(colors[i % len(colors)], fill)
+        ox, oy = x + i * dx, y + (n - 1 - i) * dy
+        svg.poly(cv, [(ox + k, oy), (ox + k + pw, oy),
+                      (ox + pw, oy + ph), (ox, oy + ph)],
+                 f, stroke, sw, dash, True, op)
+    if s.get("text"):
+        _label(cv, s, x, y, w, h, tc)
+
+
+def _gaussians(cv, s, x, y, w, h, fill, stroke, sw, dash, tc, ctx):
+    """Scattered oriented ellipses -- the 3D-Gaussian primitive."""
+    import math
+    n = int(s.get("n", 7))
+    colors = s.get("colors") or ["blue.soft", "green.soft", "orange.soft",
+                                 "purple.soft", "grey.soft"]
+    seed = int(s.get("seed", 7))
+    # deterministic LCG: the same spec must always produce the same picture
+    vals = []
+    v = seed * 2654435761 % 2147483647
+    for _ in range(n * 5):
+        v = (v * 1103515245 + 12345) % 2147483648
+        vals.append(v / 2147483648.0)
+    for i in range(n):
+        a, b, c, d, e = vals[i * 5:i * 5 + 5]
+        rx = w * (0.07 + 0.06 * a)
+        ry = rx * (0.42 + 0.4 * b)
+        cx = x + rx + c * (w - 2 * rx)
+        cy = y + ry + d * (h - 2 * ry)
+        rot = -60 + 120 * e
+        f = style.resolve_color(colors[i % len(colors)], fill)
+        cv.add("<ellipse cx='%s' cy='%s' rx='%s' ry='%s' transform='rotate(%s %s %s)' "
+               "fill='%s' stroke='%s' stroke-width='%s' opacity='%s'/>"
+               % (fmt(cx), fmt(cy), fmt(rx), fmt(ry), fmt(rot), fmt(cx), fmt(cy),
+                  f, stroke, fmt(sw), s.get("opacity", 0.9)))
+
+
+def _marker(cv, s, x, y, w, h, fill, stroke, sw, dash, tc, ctx):
+    """Trainable / frozen indicator.
+
+    The corpus draws these as a flame and a snowflake.  They are pasted-in
+    emoji in the originals, which rasterises badly and fails accessibility
+    checks, so they are vector paths here -- same reading, clean output.
+    """
+    kind = str(s.get("kind", s.get("text", "trainable"))).lower()
+    d = min(w, h)
+    cx, cy = x + w / 2.0, y + h / 2.0
+    if kind in ("frozen", "snow", "snowflake", "freeze"):
+        col = style.resolve_color(s.get("color"), "#2E75B6")
+        r = d * 0.46
+        import math
+        for k in range(3):
+            a = math.pi * k / 3.0
+            dx, dy = r * math.cos(a), r * math.sin(a)
+            svg.line(cv, cx - dx, cy - dy, cx + dx, cy + dy, col, sw * 1.3, None, "round")
+            for sgn in (-1, 1):
+                bx, by = cx + sgn * dx * 0.62, cy + sgn * dy * 0.62
+                for da in (0.9, -0.9):
+                    svg.line(cv, bx, by,
+                             bx + r * 0.30 * math.cos(a + da + (0 if sgn > 0 else math.pi)),
+                             by + r * 0.30 * math.sin(a + da + (0 if sgn > 0 else math.pi)),
+                             col, sw, None, "round")
+    else:
+        col = style.resolve_color(s.get("color"), "#ED7D31")
+        inner = style.resolve_color(s.get("inner"), "#FFC000")
+        r = d * 0.48
+        # Outer flame: tip at the top, belly at 40% width, curling base.
+        cv.add("<path d='M %s %s C %s %s %s %s %s %s C %s %s %s %s %s %s Z' "
+               "fill='%s' stroke='none'/>"
+               % (fmt(cx), fmt(cy - r),
+                  fmt(cx + r * 0.85), fmt(cy - r * 0.10),
+                  fmt(cx + r * 0.66), fmt(cy + r * 0.72),
+                  fmt(cx), fmt(cy + r),
+                  fmt(cx - r * 0.66), fmt(cy + r * 0.72),
+                  fmt(cx - r * 0.85), fmt(cy - r * 0.10),
+                  fmt(cx), fmt(cy - r),
+                  col))
+        # Inner core, same silhouette at 55% scale, sitting low.
+        r2 = r * 0.55
+        cy2 = cy + r * 0.28
+        cv.add("<path d='M %s %s C %s %s %s %s %s %s C %s %s %s %s %s %s Z' "
+               "fill='%s' stroke='none'/>"
+               % (fmt(cx), fmt(cy2 - r2),
+                  fmt(cx + r2 * 0.85), fmt(cy2 - r2 * 0.10),
+                  fmt(cx + r2 * 0.66), fmt(cy2 + r2 * 0.72),
+                  fmt(cx), fmt(cy2 + r2),
+                  fmt(cx - r2 * 0.66), fmt(cy2 + r2 * 0.72),
+                  fmt(cx - r2 * 0.85), fmt(cy2 - r2 * 0.10),
+                  fmt(cx), fmt(cy2 - r2),
+                  inner))
+
+
+def _cameraring(cv, s, x, y, w, h, fill, stroke, sw, dash, tc, ctx):
+    """Surround-view camera layout: 3 front tiles, ego icon, 3 rear tiles.
+
+    This is the nuScenes/Waymo input block that opens most of the driving
+    papers in the corpus.  ``srcs`` takes up to six image paths in the order
+    front-left, front, front-right, back-left, back, back-right; missing
+    entries fall back to labelled slots.
+    """
+    srcs = s.get("srcs") or []
+    gap = float(s.get("cellgap", 1.6))
+    cw = (w - 2 * gap) / 3.0
+    ch = (h - gap) / 2.0
+    labels = s.get("labels") or []
+    for i in range(6):
+        r, c = divmod(i, 3)
+        cx0 = x + c * (cw + gap)
+        cy0 = y + r * (ch + gap)
+        if r == 1 and c == 1 and s.get("ego", True):
+            _egocar(cv, cx0, cy0, cw, ch, s)
+            continue
+        sub = dict(s)
+        sub["shape"] = "image"
+        sub["src"] = srcs[i] if i < len(srcs) else None
+        sub["text"] = labels[i] if i < len(labels) else None
+        sub["caption"] = None
+        _image(cv, sub, cx0, cy0, cw, ch, fill, stroke, sw, dash, tc, ctx)
+
+
+def _egocar(cv, x, y, w, h, s):
+    """Top-down ego-vehicle glyph with a forward FOV wedge."""
+    col = style.resolve_color(s.get("ego_color"), "#4472C4")
+    cx, cy = x + w / 2.0, y + h / 2.0
+    bw, bh = w * 0.30, h * 0.52
+    if s.get("fov", True):
+        svg.poly(cv, [(cx, cy), (cx - w * 0.42, cy - h * 0.44), (cx + w * 0.42, cy - h * 0.44)],
+                 _shade(col, 1.7), "none", 0, None, True, 0.5)
+    svg.rect(cv, cx - bw / 2, cy - bh / 2, bw, bh, bw * 0.28, col,
+             _shade(col, 0.7), style.STROKE["hairline"])
+    svg.rect(cv, cx - bw * 0.31, cy - bh * 0.30, bw * 0.62, bh * 0.26, bw * 0.1,
+             "#FFFFFF", "none", 0)
+
+
+def _imagegrid(cv, s, x, y, w, h, fill, stroke, sw, dash, tc, ctx):
+    """rows x cols tile of real images -- qualitative result panels."""
+    rows = int(s.get("rows", 1)); cols = int(s.get("cols", 3))
+    gap = float(s.get("cellgap", 1.8))
+    srcs = s.get("srcs") or []
+    labels = s.get("labels") or []
+    cw = (w - (cols - 1) * gap) / cols
+    ch = (h - (rows - 1) * gap) / rows
+    for i in range(rows * cols):
+        r, c = divmod(i, cols)
+        sub = dict(s)
+        sub["shape"] = "image"
+        sub["src"] = srcs[i] if i < len(srcs) else None
+        sub["text"] = labels[i] if i < len(labels) else None
+        sub["caption"] = None
+        _image(cv, sub, x + c * (cw + gap), y + r * (ch + gap), cw, ch,
+               fill, stroke, sw, dash, tc, ctx)
+
+
+def _lane(cv, s, x, y, w, h, fill, stroke, sw, dash, tc, ctx):
+    """A thick directional band -- the 'this whole row is one dataflow' idiom."""
+    head = float(s.get("head", min(h * 1.1, w * 0.16)))
+    hh = h * float(s.get("waist", 0.52))
+    y0 = y + (h - hh) / 2.0
+    pts = [(x, y0), (x + w - head, y0), (x + w - head, y),
+           (x + w, y + h / 2.0), (x + w - head, y + h), (x + w - head, y0 + hh),
+           (x, y0 + hh)]
+    svg.poly(cv, pts, fill, stroke, sw, dash)
+    if s.get("text"):
+        svg.draw_text(cv, x + (w - head) / 2.0, y + h / 2.0, s["text"], s["_tsize"],
+                      s["_font"], s["_bold"], s["_italic"], tc, "middle", "middle")
+
+
 _DISPATCH = {
     "box": _box, "roundbox": _box, "sharpbox": _sharpbox, "rect": _sharpbox,
     "trapezoid": _trapezoid, "encoder": _trapezoid, "invtrapezoid": _invtrapezoid,
@@ -406,7 +642,11 @@ _DISPATCH = {
     "hexagon": _hexagon, "circle": _circle, "ellipse": _circle,
     "slab": _slab, "slabstack": _slab, "cube": _cube, "tokengrid": _tokengrid,
     "plane": _plane, "circleop": _op, "op": _op, "image": _image, "photo": _image,
-    "imagestack": _imagestack, "text": _text, "note": _text, "mathlabel": _text,
+    "imagestack": _imagestack, "voxelgrid": _voxelgrid, "voxel": _voxelgrid,
+    "planestack": _planestack, "featmaps": _planestack,
+    "gaussians": _gaussians, "marker": _marker,
+    "cameraring": _cameraring, "surroundview": _cameraring,
+    "imagegrid": _imagegrid, "lane": _lane, "text": _text, "note": _text, "mathlabel": _text,
     "ellipsis": _ellipsis, "spacer": _spacer, "bar": _bar, "brace": _brace,
     "framestrip": _framestrip, "dist": _dist, "density": _dist,
 }

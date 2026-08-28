@@ -26,11 +26,22 @@ plots — those are matplotlib work.
 ## The loop
 
 ```bash
-# 1. start from the closest archetype
+# 0. OPTIONAL -- if the user has the model code, draft from it instead of from
+#    a reading of it.  Nothing is imported or executed; both readers use ast.
+python3 scripts/from_code.py path/to/models/ --list
+python3 scripts/from_code.py path/to/models/ --model MyNet -o figures/src/overview.yaml
+python3 scripts/from_code.py configs/model.py --mm -o figures/src/overview.yaml
+#    The output is a first draft.  Rename boxes to the paper's names, delete
+#    what the paper does not discuss, attach real crops, mark the contribution
+#    `role: core`.  See references/from-code.md for the known limits.
+
+# 1. otherwise start from the closest archetype
 cp templates/pipeline-4stage.yaml figures/src/overview.yaml
 #   architecture: pipeline-4stage, module-detail, attention-tokens,
 #                 streaming-worldmodel, dual-branch, gated-module,
 #                 teaser-comparison
+#   with real data: framework-with-io, surroundview-pipeline,
+#                 trainable-frozen, teacher-student, wrapped-pipeline
 #   analysis:     blindspot-teaser, study-overview, factorial-2x2, taxonomy
 
 # 2. edit the spec (see references/spec-language.md)
@@ -64,7 +75,8 @@ python3 scripts/validate.py figures/src/overview.yaml --svg figures/overview.svg
 
 1. Never hand-write SVG or PDF coordinates. Write a spec.
 2. Never generate the figure with an image model.
-3. Type sizes are final printed points. Under 5.5 pt is a failure.
+3. Type sizes are final printed points. Under 5.0 pt is a failure,
+   5.0-5.6 pt a warning you need a reason for.
 4. Colour means something or it is grey. One concept, one colour, across the
    whole paper.
 5. `image` slots stay placeholders until the user supplies real crops. Never

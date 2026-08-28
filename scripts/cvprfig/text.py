@@ -1,7 +1,8 @@
-"""Text measurement and light inline markup.
+r"""Text measurement and light inline markup.
 
 Supports the small amount of markup real conference figures need:
   ``*italic*``, ``**bold**``, ``_sub_``, ``^sup^`` and ``\n`` line breaks.
+  A backslash escapes the next character: ``kernel\_size`` prints literally.
 Measurement uses the baked Adobe Core-14 advance widths, so a box sized here
 is correct in the exported PDF without a font query at run time.
 """
@@ -58,10 +59,15 @@ TOKEN_RE = re.compile(r"(\*\*|\*|_\{|\^\{|\}|_|\^)")
 
 
 def parse_runs(text, bold=False, italic=False):
-    """Split inline markup into styled runs.
+    r"""Split inline markup into styled runs.
 
     Returns a list of ``(chars, bold, italic, script)`` where ``script`` is
     ``0`` for baseline, ``-1`` subscript, ``+1`` superscript.
+
+    A backslash escapes the next character, so ``kernel\_size`` is a literal
+    underscore rather than a subscript.  Code-derived labels are full of
+    identifiers and need this; so does any spec that wants to print an
+    asterisk.
     """
     runs, buf = [], []
     b, i, script = bold, italic, 0
@@ -72,6 +78,8 @@ def parse_runs(text, bold=False, italic=False):
             runs.append(("".join(buf), b, i, script))
             del buf[:]
     while j < len(text):
+        if text[j] == "\\" and j + 1 < len(text):
+            buf.append(text[j + 1]); j += 2; continue
         if text.startswith("**", j):
             flush(); b = not b; j += 2; continue
         if text[j] == "*":

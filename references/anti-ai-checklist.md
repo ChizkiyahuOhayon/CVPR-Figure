@@ -8,7 +8,8 @@ it cannot.
 
 | Code | Level | What it catches |
 |---|---|---|
-| `text-too-small` | error | anything under 5.5 pt at final size |
+| `text-too-small` | error | anything under 5.0 pt at final size (the corpus 29th percentile) |
+| `text-small` | warn | 5.0-5.6 pt -- legal, but have a reason |
 | `text-small` | warning | 5.5–6.0 pt |
 | `label-overflow` | error | text wider than its box |
 | `node-overlap` | error | two siblings occupying the same space |
