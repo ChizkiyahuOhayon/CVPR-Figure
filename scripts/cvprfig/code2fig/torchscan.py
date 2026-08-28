@@ -14,6 +14,7 @@ CLI reports what it skipped.
 import ast
 import os
 import re
+import warnings
 
 from .graph import Graph, Node, infer_role, prettify
 
@@ -76,8 +77,15 @@ def collect(paths):
             files.append(p)
     for f in files:
         try:
-            tree = ast.parse(open(f, encoding="utf-8", errors="ignore").read(), f)
-        except SyntaxError:
+            with open(f, encoding="utf-8", errors="ignore") as fh:
+                src = fh.read()
+            # Research repos are full of docstrings with invalid escapes
+            # (\infty, \times). That is the scanned project's business, not
+            # ours, and its warnings must not pollute our output.
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", SyntaxWarning)
+                tree = ast.parse(src, f)
+        except (SyntaxError, ValueError):
             continue
         for n in ast.walk(tree):
             if not isinstance(n, ast.ClassDef):

@@ -17,14 +17,31 @@ from .graph import Graph, Node, infer_role, prettify
 # Config keys in the order they feed each other.  mmdet-family configs are
 # written in this order by convention, and where they are not, the key names
 # still say what stage they are.
+# Pipeline order.  mmdet-family configs are conventionally written in this
+# order, but not reliably, and a key the list does not know sorts to the end --
+# which put `pts_bbox_head` in the middle of a figure during testing.  So the
+# list is grouped by *phase* and covers the keys that actually occur across the
+# 48 repositories in the reference corpus.
 STAGE_ORDER = [
-    "data_preprocessor", "img_backbone", "backbone", "pts_voxel_encoder",
-    "pts_middle_encoder", "pts_backbone", "img_neck", "neck", "pts_neck",
+    # 0. input handling
+    "data_preprocessor", "pts_voxel_layer", "pts_pillar_layer", "voxel_layer",
+    # 1. per-modality encoders
+    "img_backbone", "backbone", "pts_voxel_encoder", "voxel_encoder",
+    "pts_middle_encoder", "middle_encoder", "pts_backbone",
+    # 2. necks
+    "img_neck", "neck", "pts_neck",
+    # 3. lift / project into the shared space
     "img_view_transformer", "view_transformer", "transformer",
-    "pre_process", "img_bev_encoder_backbone", "img_bev_encoder_neck",
-    "fusion_layer", "encoder", "decoder", "occupancy_head", "nerf_head",
+    "depth_net", "pre_process",
+    # 4. fusion
+    "occ_fuser", "fusion_layer", "fuser", "pts_fusion_layer",
+    # 5. shared encoder
+    "img_bev_encoder_backbone", "occ_encoder_backbone", "bev_encoder_backbone",
+    "encoder", "img_bev_encoder_neck", "occ_encoder_neck", "bev_encoder_neck",
+    # 6. heads
+    "decoder", "occupancy_head", "occ_head", "nerf_head", "dense_nerf_head",
     "pts_bbox_head", "bbox_head", "roi_head", "seg_head", "head",
-    "dense_nerf_head", "loss", "train_cfg", "test_cfg",
+    "loss", "train_cfg", "test_cfg",
 ]
 SKIP = re.compile(r"^(train_cfg|test_cfg|init_cfg|data_preprocessor|"
                   r"pretrained|type|.*_weight|.*_cfg)$")

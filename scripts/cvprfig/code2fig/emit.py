@@ -212,10 +212,14 @@ def fit(g, venue="cvpr", width="double", min_scale=0.94, **kw):
     if scale >= min_scale:
         return spec, "; ".join(notes) + " to fit the column"
 
-    # 3. Shed the least connected boxes.  A short row that fits beats a long
-    #    row that gets downscaled into unreadable type.
+    # 3. Shed the least connected boxes -- but only a few.  A short row that
+    #    fits beats a long row downscaled into unreadable type; a *five*-box
+    #    row does not beat an eleven-box figure in two bands, and eleven is
+    #    the corpus median for a framework figure.  So shedding stops at 25%
+    #    of the graph and the wrap takes over.
     n0 = len(g.nodes)
-    while len(g.nodes) > 5:
+    floor = max(6, int(round(n0 * 0.75)))
+    while len(g.nodes) > floor:
         g.limit(len(g.nodes) - 1)
         spec = emit(g, venue=venue, width=width, **kw)
         scale, _ = measure(spec)
