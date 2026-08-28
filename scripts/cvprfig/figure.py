@@ -54,14 +54,12 @@ class Figure(object):
             L.measure(it, ctx)
 
         # title band above the panel row
-        self.title_band = 0.0
-        for it in self.items:
-            if it.spec.get("title") and it.spec.get("title_pos", "above") == "above":
-                ts = float(it.spec.get("title_size", style.TYPE["stage_title"]["size"]))
-                nlines = len(str(it.spec["title"]).split("\n"))
-                self.title_band = max(self.title_band,
-                                      ts * (1.0 + 0.18 * (nlines - 1)) * nlines
-                                      + style.GEOM["stage_title_gap"])
+        # Room above the first row for stage titles, which are drawn outside
+        # the frame they belong to.  This has to look *inside* the top-level
+        # items as well as at them: a banded layout (see code2fig) wraps titled
+        # groups in an untitled band, and reserving nothing then clips every
+        # title on the top row.
+        self.title_band = max((_above_title_h(it) for it in self.items), default=0.0)
         self.bottom_band = 0.0
         for it in self.items:
             if it.spec.get("title") and it.spec.get("title_pos") == "below":
@@ -343,6 +341,26 @@ class Figure(object):
                 cy += size + gap
             else:
                 cx += sw + 3.0 + tw + gap
+
+
+def _above_title_h(item, depth=0):
+    """Height an "above" title needs, for this container or any it holds.
+
+    Deliberately conservative: it does not check whether the titled container
+    actually sits at the top edge, because titles are measured before anything
+    is placed.  Over-reserving costs a few points of white space; under-
+    reserving clips text off the canvas.
+    """
+    h = 0.0
+    s = getattr(item, "spec", None) or {}
+    if s.get("title") and s.get("title_pos", "above") == "above":
+        ts = float(s.get("title_size", style.TYPE["stage_title"]["size"]))
+        nlines = len(str(s["title"]).split("\n"))
+        h = ts * (1.0 + 0.18 * (nlines - 1)) * nlines + style.GEOM["stage_title_gap"]
+    if depth < 3:
+        for c in getattr(item, "children", None) or ():
+            h = max(h, _above_title_h(c, depth + 1))
+    return h
 
 
 def _as_container(p):

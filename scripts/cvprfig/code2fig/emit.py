@@ -149,9 +149,16 @@ def _group(layers, rows=1):
     return groups
 
 
+# Panel titles the emitter is willing to assert on its own.
+#
+# `core` deliberately does *not* say "Our Contribution".  The role came from a
+# name pattern -- `pts_voxel_layer` matches it -- and a draft that labels a
+# guessed module as the paper's contribution is a claim the reader may ship by
+# accident.  Marking the contribution is a decision for the author; pass
+# --stages, or set `role: core` and retitle the panel by hand.
 STAGE_WORDS = {
     "input": "Input", "backbone": "Feature Extraction", "encoder": "Encoding",
-    "attention": "Attention", "core": "Our Contribution", "temporal": "Temporal",
+    "attention": "Attention", "core": "Core Module", "temporal": "Temporal",
     "memory": "Memory", "decoder": "Decoding", "output": "Output", "loss": "Objective",
 }
 
@@ -247,10 +254,13 @@ def _banded(g, bands=2, **kw):
                            "body": [_as_group(p) for p in band]}}]}
         for i, band in enumerate(rows)]
 
-    # The edge that crosses the wrap has to read as a fold.  Leaving the
-    # *bottom* of the upper band's last box and entering the *top* of the lower
-    # band's first puts the horizontal leg in the empty gap between the bands;
-    # joining right-edge to left-edge runs it straight through the boxes.
+    # The edge that crosses the wrap has to read as a fold: out of the *bottom*
+    # of the upper band's last box, into the *top* of the lower band's first.
+    #
+    # `mid` matters here.  At the default 0.5 the horizontal leg runs halfway
+    # down the band gap -- which is exactly where the lower band's stage titles
+    # sit, so the connector draws a line through them.  Pushing it to 0.95 puts
+    # the leg just above the target box, below the titles.
     order = [n.id.replace(".", "_") for layer in g.topo_layers() for n in layer]
     last_of_band = {}
     idx = 0
@@ -264,6 +274,7 @@ def _banded(g, bands=2, **kw):
             if up and dn and e["from"] == up[-1] and e["to"] == dn[0]:
                 e["from"] = up[-1] + ".s"
                 e["to"] = dn[0] + ".n"
+                e["mid"] = 0.95
     return spec
 
 
