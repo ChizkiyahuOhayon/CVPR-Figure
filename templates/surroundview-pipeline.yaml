@@ -37,7 +37,7 @@ panels:
   - id: s_bev
     title: "BEV Encoding"
     frame: dashed
-    fill: gold.pale
+    fill: orange.pale
     valign: middle
     body:
       - row:
@@ -70,3 +70,9 @@ edges:
   - {from: benc.e, to: det.w}
   - {from: benc.e, to: occ.w}
   - {from: occ.s, to: pred.n}
+
+caption: >-
+  \textbf{Depth is predicted, not assumed.} Six surround-view images are
+  encoded, each pixel is lifted along a predicted depth distribution and
+  splatted into a voxel grid (orange: ours), and a BEV encoder feeds the
+  detection and occupancy heads.

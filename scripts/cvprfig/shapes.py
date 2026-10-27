@@ -36,15 +36,11 @@ def draw(cv, item, ctx):
     sw = style.stroke_width(s.get("lw"), style.STROKE["box"])
     dash = style.DASH.get(s.get("dash")) if isinstance(s.get("dash"), str) else (
         style.DASH["region"] if s.get("dash") else None)
-    x, y, w, h = item.x, item.y, item.w, item.h
-    cap_h = 0.0
-    if s.get("caption"):
-        cap_h = s["_cap_h"] + float(s.get("caption_gap", 3.0))
-        h = h - cap_h
+    x, y, w, h = item.body()
     fn = _DISPATCH.get(shape, _box)
     fn(cv, s, x, y, w, h, fill, stroke, sw, dash, tc, ctx)
     if s.get("caption"):
-        svg.draw_text(cv, x + w / 2.0 + float(s.get("caption_dx", 0)),
+        svg.draw_text(cv, item.cx + float(s.get("caption_dx", 0)),
                       y + h + float(s.get("caption_gap", 3.0)) + s["_cap_size"] * 0.5,
                       s["caption"], s["_cap_size"], s["_font"], False,
                       s.get("caption_italic", False),
@@ -65,7 +61,10 @@ def _label(cv, s, x, y, w, h, tc, dx=0.0, dy=0.0):
     if not s.get("text"):
         return
     rot = s.get("rotate", 0)
-    svg.draw_text(cv, x + w / 2.0 + dx, y + h / 2.0 + dy, s["text"], s["_tsize"],
+    anchor = s.get("anchor", "middle")
+    # an anchored label starts (or ends) at the box edge, not at its centre
+    ax = {"start": x, "left": x, "end": x + w, "right": x + w}.get(anchor, x + w / 2.0)
+    svg.draw_text(cv, ax + dx, y + h / 2.0 + dy, s["text"], s["_tsize"],
                   s["_font"], s["_bold"], s["_italic"], tc,
                   s.get("anchor", "middle"), "middle", -rot if rot else 0)
 

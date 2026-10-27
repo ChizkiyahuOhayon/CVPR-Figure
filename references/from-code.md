@@ -100,4 +100,8 @@ The draft is step 3b of the workflow, not the end of it. Before delivering:
    reader is least reliable.
 5. **Mark the contribution.** Give it `role: core` and put it in its own
    panel; the draft has no idea which module is the paper.
-6. Run `scripts/validate.py`, and look at the PNG.
+6. **Finish the caption.** Operators the draft draws (⊕, ⊗, ⓒ) are declared
+   in its `symbols:` table with a `TODO` caption that already defines them;
+   write the claim in front and define any symbol you add
+   ([symbols-and-captions.md](symbols-and-captions.md)).
+7. Run `scripts/validate.py`, and look at the PNG.

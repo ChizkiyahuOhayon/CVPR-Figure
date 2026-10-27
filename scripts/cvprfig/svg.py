@@ -35,11 +35,16 @@ class Canvas(object):
     def add(self, s):
         self.body.append(s)
 
-    def marker(self, color, width, kind="tri"):
+    def marker(self, color, width, kind="tri", head=None):
+        """Arrowhead.  ``head`` is the (length, width) in points the PPTX
+        writer will ask PowerPoint/LibreOffice for (style.arrow_geometry), so
+        the SVG and the PPTX draw the same head."""
         key = "a%d" % self._mid
         self._mid += 1
-        L = style.GEOM["arrow_len"] / max(width, 0.35)
-        W = style.GEOM["arrow_wid"] / max(width, 0.35)
+        hl, hw = head or style.arrow_geometry(width)
+        width = max(width, 0.05)
+        L = hl / width
+        W = hw / width
         if kind == "open":
             path = ("<path d='M0,%s L%s,%s L0,%s' fill='none' stroke='%s' "
                     "stroke-width='1.1' stroke-linejoin='miter'/>"
@@ -121,6 +126,18 @@ def draw_text(cv, x, y, label, size, font="times", bold=False, italic=False,
             if not chars:
                 continue
             s = size * (T.SCRIPT_SCALE if script else 1.0)
+            # Converters drop leading/trailing blanks of a <text> element, so
+            # step over them here instead of relying on xml:space.
+            lead = len(chars) - len(chars.lstrip())
+            for ch in chars[:lead]:
+                cx += T.glyph_width(ch, font, b, it) * s / 1000.0
+            tail = chars[lead:]
+            stripped = tail.rstrip()
+            trail_w = sum(T.glyph_width(ch, font, b, it) for ch in tail[len(stripped):]) * s / 1000.0
+            chars = stripped
+            if not chars:
+                cx += trail_w
+                continue
             dy = 0.0
             if script > 0:
                 dy = -size * T.SCRIPT_RISE
@@ -133,6 +150,7 @@ def draw_text(cv, x, y, label, size, font="times", bold=False, italic=False,
                           " font-style='italic'" if it else "", ESC(chars)))
             for ch in chars:
                 cx += T.glyph_width(ch, font, b, it) * s / 1000.0
+            cx += trail_w
     out.append("</g>")
     cv.add("".join(out))
 

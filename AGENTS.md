@@ -55,6 +55,10 @@ python3 scripts/validate.py figures/src/overview.yaml --svg figures/overview.svg
 
 # 5. look at it
 #    (convert to PNG and open it; the auditor cannot judge communication)
+
+# 6. AFTER THE USER HAND-EDITS THE PPTX -- the PPTX is now the only source
+python3 scripts/audit_pptx.py figures/overview.pptx --width 496.8 --spec figures/src/overview.yaml
+python3 scripts/export_pptx.py figures/overview.pptx --width 496.8   # lossless PDF + audit_pdf
 ```
 
 ## Read these, in this order
@@ -67,7 +71,10 @@ python3 scripts/validate.py figures/src/overview.yaml --svg figures/overview.svg
 | `references/spec-language.md` | writing the spec |
 | `references/house-style.md` | colours, sizes, stroke weights, and why |
 | `references/case-studies.md` | matching a specific paper's figures |
+| `references/symbols-and-captions.md` | writing labels with symbols, the symbol table, the caption |
 | `references/anti-ai-checklist.md` | before delivering |
+| `references/after-handover.md` | the user edited the PPTX, or exported a PDF from it |
+| `references/app-compatibility.md` | WPS / Keynote / LibreOffice / PowerPoint differences |
 | `references/visio-workflow.md` | hand-editing the output |
 | `references/latex-integration.md` | putting it in the paper |
 
@@ -75,13 +82,19 @@ python3 scripts/validate.py figures/src/overview.yaml --svg figures/overview.svg
 
 1. Never hand-write SVG or PDF coordinates. Write a spec.
 2. Never generate the figure with an image model.
-3. Type sizes are final printed points. Under 5.0 pt is a failure,
-   5.0-5.6 pt a warning you need a reason for.
+3. Type sizes are final printed points. Body 7.5 pt, titles 8.5 pt. Under
+   6.0 pt is a failure, 6.0-6.5 pt a warning, module names never under 7.0 pt.
+   To enlarge, use `figure: {type_scale: ...}`, not hand edits.
 4. Colour means something or it is grey. One concept, one colour, across the
    whole paper.
 5. `image` slots stay placeholders until the user supplies real crops. Never
    invent an output render or a number.
-6. Run the auditor before saying the figure is done.
+6. Every symbol in the figure is defined in a label or in the caption; write
+   variables as `$...$` maths. Every legend entry is used.
+7. No web-UI colours (Tailwind / Material / Bootstrap); pale Office fills,
+   black outlines.
+8. Run the auditor before saying the figure is done -- and again on the PPTX
+   and PDF after any hand edit. Never re-render a spec over an edited PPTX.
 
 ## Environment notes
 

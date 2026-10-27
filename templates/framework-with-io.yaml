@@ -45,7 +45,7 @@ panels:
   - id: s_core
     title: "Our Module"
     frame: dashed
-    fill: gold.pale
+    fill: orange.pale
     valign: middle
     body:
       - col:
@@ -53,11 +53,11 @@ panels:
           align: center
           body:
             - {id: q, shape: slab, n: 5, cell: 7, cellh: 22, role: core,
-               caption: "*N* queries"}
+               caption: "$N$ queries"}
             - {id: mix, shape: box, text: "Adaptive Mixing", role: core}
             - {id: add, shape: circleop, op: "+", d: 9}
             - {id: mhsa, shape: box, text: "Temporal-Spatial MHSA", role: core,
-               badge: "\u00d7L"}
+               badge: "$\\times L$"}
 
   - id: s_out
     title: "Decoders"
@@ -85,3 +85,14 @@ edges:
   - {from: mhsa.e, to: h2.w, color: core}
   - {from: h1.s, to: o1.n}
   - {from: h2.s, to: o2.n}
+
+symbols:
+  "N":       {meaning: "number of queries", defined_in: figure}
+  "L":       {meaning: "number of refinement layers", defined_in: caption}
+  "\\oplus": {meaning: "residual addition", defined_in: caption}
+
+caption: >-
+  \textbf{Queries carry the scene from input to output.} An RGB frame and a
+  geometry prior (left) are encoded; $N$ learnable queries sample the
+  multi-scale features and are refined over $L$ layers ($\oplus$: residual
+  addition); two heads read occupancy and the trajectory (right).

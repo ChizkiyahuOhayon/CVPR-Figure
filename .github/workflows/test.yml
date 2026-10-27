@@ -33,13 +33,14 @@ jobs:
           python3 -m pip install --quiet pyyaml
           python3 tests/test_engine.py
 
-      - name: Render every template and audit it
+      - name: Render every template and audit the spec and the PPTX
         run: |
           set -e
-          for f in templates/*.yaml; do
+          for f in templates/*.yaml examples/quickstart.yaml; do
             name=$(basename "$f" .yaml)
             python3 scripts/render.py "$f" -o "build/$name" -f svg,vsdx,pptx
             python3 scripts/validate.py "$f" --svg "build/$name.svg"
+            python3 scripts/audit_pptx.py "build/$name.pptx" --spec "$f"
           done
 
       - name: Check the stencil generator

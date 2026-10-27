@@ -26,6 +26,21 @@ legend:   # an optional key
 | `pad_top` / `pad_bottom` | `0` | extra room, e.g. for a key beside the first title |
 | `bg` | white | canvas colour |
 | `height` | auto | force a minimum canvas height |
+| `type_scale` | `1.0` | multiply every font size, then re-lay out (change size here, not in PowerPoint) |
+| `pptx_app` | `office` | which application exports the paper PDF: `office` (LibreOffice/PowerPoint), `wps`, `keynote`; sets arrowhead presets (and whole-point type for Keynote) |
+| `pptx_heads` | `native` | `shape` draws PPTX arrowheads as triangles, identical in every application |
+| `pptx_connectors` | `native` | `freeform` writes plain paths instead of glued connectors (for Keynote) |
+
+Top-level keys besides `figure`:
+
+| Key | Meaning |
+|---|---|
+| `paper` | path to a shared `paper.yaml` with `venue`, `font`, `roles`, `symbols` |
+| `roles` | override the role → colour map, e.g. `{core: green.light}` |
+| `symbols` | the symbol table, see [symbols-and-captions.md](symbols-and-captions.md) |
+| `caption` | the figure caption (LaTeX), checked against `symbols` |
+| `caption_tex` | `path/to/section.tex#fig:label`, read the caption out of the paper |
+| `fixed_gaps` | `true` stops the engine widening gaps for the wires that jog in them |
 
 ## `layout` and `panels`
 
@@ -42,7 +57,7 @@ container:
 | `frame` | `none` (default), `dashed`, `solid`, `region` |
 | `frame_color`, `frame_lw`, `corner` | frame styling |
 | `fill` | a wash behind the whole stage |
-| `badge` | small italic mark in the top-right, e.g. `"×L"` |
+| `badge` | small italic mark in the top-right, e.g. `"$\\times L$"` (a symbol: define *L*) |
 | `pad`, `padt`, `padr`, `padb`, `padl` | inner padding |
 | `gap` | space between children |
 | `align` | cross-axis: `center` (default), `start`, `end` |
@@ -59,8 +74,8 @@ Inside `body`, an item is one of:
 - row: [ ... ]                                       # a horizontal run
 - row: {gap: 8, align: end, body: [ ... ]}           # ...with options
 - col: [ ... ]                                       # a vertical stack
-- group: {id: blk, fill: gold.pale, frame: region,   # a tinted sub-region
-          badge: "×L", body: [ ... ]}
+- group: {id: blk, fill: orange.pale, frame: region,   # a tinted sub-region
+          badge: "$\\times L$", body: [ ... ]}
 - group: {id: outer, frame: region,                  # groups nest, and a
           row: [ {group: {id: inner, body: [...]}},  # nested group is the
                  {id: x, text: "…"} ]}               # cleanest way to draw
@@ -101,7 +116,13 @@ Common keys, all optional except `id`:
 
 ### Inline markup in any label
 
-`*italic*`, `**bold**`, `Q^t`, `Q_t`, `Q^{t+1}`, `Q_{i,j}`.
+`*italic*`, `**bold**`, `Q^t`, `Q_t`, `Q^{t+1}`, `Q_{i,j}`, `\` escapes.
+
+**Write variables as maths:** `"BEV features $z_{1:4}$"`, `"$\tilde c_s$"`,
+`"$N \times C$"`, `"$\times L$"`. Inside `$...$` letters are italic, digits
+and operators upright, binary operators spaced as in TeX, accents compose.
+The supported commands and the symbol table are in
+[symbols-and-captions.md](symbols-and-captions.md).
 
 ### Shape vocabulary
 
@@ -138,7 +159,7 @@ an unfinished figure cannot be mistaken for a finished one.
 `output` `aux` `baseline` `ours` `loss` `neutral`
 
 Colour can also be written directly as `#RRGGBB`, `family.tint`
-(`gold.soft`), a bare family (`blue`) or a role name. In a *stroke* or *arrow*
+(`orange.soft`), a bare family (`blue`) or a role name. In a *stroke* or *arrow*
 position, a bare family or role resolves to its saturated end; in a *fill*
 position, to its pale end. That is deliberate and matches how the corpus works.
 
@@ -147,7 +168,7 @@ position, to its pale end. That is deliberate and matches how the corpus works.
 ```yaml
 edges:
   - {from: fs, to: am}                       # ports chosen automatically
-  - {from: mhsa.e, to: an1.e, route: bus, bend: 9, color: gold.deep}
+  - {from: mhsa.e, to: an1.e, route: bus, bend: 9, color: orange.deep}
   - {from: occ.e, to: q0.w, route: hv, label: "features", lw: box}
 ```
 
@@ -157,7 +178,7 @@ edges:
 | `route` | `auto` | `auto` `straight` `hv` `vh` `bus` |
 | `via` | — | explicit `[[x, y], ...]` waypoints |
 | `mid` | `0.5` | where the dog-leg turns, as a fraction |
-| `stub` | `5.0` | straight run out of the port before the first turn |
+| `stub` | `9.9` | straight run out of the port before the first turn |
 | `bend` | `12` | how far a `bus` route stands off |
 | `color` | black | any colour expression; resolves to the saturated end |
 | `lw` | `flow` | `hairline` `box` `flow` `emphasis`, or a number |
@@ -165,16 +186,36 @@ edges:
 | `arrow` | `end` | `end` `start` `both` `none` |
 | `head` | `tri` | `tri` (filled) or `open` |
 | `label`, `label_size`, `label_dx`, `label_dy`, `label_pos`, `label_anchor` | | |
+| `label_rotate` | `0` | `-90`/`90` sets the label along a vertical wire |
 
 Whatever the route, the path always leaves along the source port's normal and
 arrives along the target's. Containers are valid endpoints, so
-`{from: block.s, to: occ.n}` connects a whole stage.
+`{from: block.s, to: occ.n}` connects a whole stage; into a stage whose title
+sits above it, the arrow stops at the title instead of running through it.
+
+What the router guarantees, without being asked:
+
+- the run after the last bend of an arrow is at least 2.5 arrowheads (~10 pt),
+  so no application mis-aims the head; when the geometry cannot allow it the
+  auditor says so (`short-final-segment`) and the PPTX gives the head its own
+  straight segment;
+- dog-legs that would jog on top of each other get separate lanes, 4 pt
+  apart; edges sharing a port share one trunk;
+- the gap between two stages is widened until every wire jogging in it fits
+  (switch off with `fixed_gaps: true`);
+- facing ports a few points out of line get one straight arrow, not a 2 pt
+  jog;
+- if only one end names its side (`to: o_d.w`), the other end leaves facing
+  it;
+- arrows meet slanted outlines (trapezoid, parallelogram, plane) on the
+  outline, and a captioned shape's south port sits below its caption.
 
 ## `notes`
 
 ```yaml
 notes:
-  - {text: "*Q*^{t}", near: qbank.ne, dx: 3, dy: -4, size: 6.4}
+  - {text: "$Q^t$", near: qbank.ne, dx: 3, dy: -4}
+  - {text: "regime A  →  B", near: inp.nw, dy: -6.5, anchor: start}
   - {text: "Ego Pose", at: [210, 96], color: "#953735", italic: false}
 ```
 
@@ -184,25 +225,29 @@ notes:
 legend:
   at: [140, 3]        # or corner: ne | nw | se | sw
   dir: col            # or row
-  size: 5.8
   box: false
   items:
-    - {text: "Real-time images", color: ink, kind: dashed}
-    - {text: "Gradient detach", color: "#C00000", kind: dashed}
-    - {text: "Learnable", color: gold.soft, kind: swatch}
+    - {text: "gradient detached", color: "#C00000", kind: dashed}
+    - {text: "differ in one factor", kind: dashed, dash: thin, arrow: false, lw: hairline}
+    - {text: "learnable", color: orange.soft, kind: swatch}
 ```
 
-`kind` is `line`, `dashed` or `swatch`.
+`kind` is `line`, `arrow`, `dashed` or `swatch`; `arrow:` and `dash:` override.
+The auditor fails an entry that nothing in the figure uses
+(`legend-unused-entry`) and warns about a dashed or coloured line style that
+is in no legend and carries no label. In the PPTX the legend is one group.
 
 ## Placing things by hand
 
 The flow layout covers most cases, but two escape hatches exist and both are
 used by the shipped templates:
 
+- **alignment** — `align_x: other` places a node's centre directly under or
+  over `other`'s after layout, `align_y: other` level with it. This is how
+  `gated-module.yaml` puts each gate under the operator it drives, and unlike
+  a hand-measured spacer it survives any change of type size;
 - **measured whitespace** — a `spacer` with an explicit `w`/`h` inside a `row`
-  with `justify: start` positions the next item exactly. This is how
-  `gated-module.yaml` staggers its two operators so the gate arrows never
-  cross;
+  with `justify: start` positions the next item exactly;
 - **`at: [x, y]`** — absolute canvas coordinates, for the rare annotation that
   belongs nowhere in the flow.
 

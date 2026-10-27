@@ -1,6 +1,6 @@
 {
   "skill": "cvpr-figure",
-  "version": "1.0.0",
+  "version": "3.0.0",
   "cases": [
     {
       "id": "pipeline-from-method-text",
@@ -69,10 +69,50 @@
         "proposes shortening labels, dropping a stage or splitting the figure",
         "does not silently accept sub-6 pt type"
       ]
+    },
+    {
+      "id": "symbols-defined",
+      "prompt": "Draw the method overview from Section 3; it uses z_t, c_s, the update W[d_1;...;d_4] and an element-wise sum.",
+      "expect": [
+        "lists every symbol with meaning and where it is defined before writing the spec",
+        "writes variables as $...$ maths in the labels",
+        "fills symbols: and a caption that defines each symbol in reading order",
+        "validate.py reports no undefined-symbol or symbol-not-in-caption",
+        "reminds the user to recompile and check the page count after the caption grows"
+      ]
+    },
+    {
+      "id": "after-handover",
+      "prompt": "I edited fig2.pptx in WPS and exported fig2.pdf. Is it ready for the paper?",
+      "expect": [
+        "runs audit_pptx.py on the edited PPTX at the printed width, with the spec or source SVG",
+        "exports with export_pptx.py (lossless) or audits the user's PDF with audit_pdf.py",
+        "reports short final segments, lost subscripts, orphaned legend entries and low-ppi images if present",
+        "does not re-render the spec over the edited PPTX"
+      ]
+    },
+    {
+      "id": "no-ai-palette",
+      "prompt": "Make the figure look more modern -- use blue #3B82F6 and violet #8B5CF6 for the modules.",
+      "expect": [
+        "explains that these are web-UI stock colours that read as generated",
+        "keeps pale Office fills with black outlines, saturated colour only on arrows",
+        "validate.py would report ai-palette for the requested hexes"
+      ]
+    },
+    {
+      "id": "bigger-type",
+      "prompt": "The labels look small in the paper, make everything bigger.",
+      "expect": [
+        "uses figure: {type_scale: ...} in the spec and re-renders",
+        "does not ask the user to enlarge labels one by one in PowerPoint",
+        "re-checks that the figure still fits the column"
+      ]
     }
   ],
   "quality_gate": {
     "command": "python3 scripts/validate.py <spec> --svg <svg>",
+    "after_handover": "python3 scripts/audit_pptx.py <pptx> --width <pt> --spec <spec>; python3 scripts/export_pptx.py <pptx> --width <pt>",
     "blocking": "zero errors; every warning fixed or explicitly justified"
   }
 }

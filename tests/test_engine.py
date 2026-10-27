@@ -141,8 +141,8 @@ check(len(straight) == 2, "aligned facing ports give one straight run")
 
 # ---------------------------------------------------------------- colour
 section("colour resolution")
-check(style.resolve_color("core") == "#FFF2CC", "role -> pale fill")
-check(style.resolve_color("core", ink=True) == "#BF9000", "role -> saturated ink")
+check(style.resolve_color("core") == "#FBE5D6", "role -> pale fill (core is orange in v3)")
+check(style.resolve_color("core", ink=True) == "#C55A11", "role -> saturated ink")
 check(style.resolve_color("gold.soft") == "#FFE699", "family.tint")
 check(style.resolve_color("#abcdef") == "#ABCDEF", "hex passes through, normalised")
 
@@ -385,12 +385,202 @@ _, _r2 = V.audit(_spec)
 check(_r2.counts()["error"] == 0, "the emitted draft passes the auditor")
 
 section("v2 recalibrated constants")
-check(style.MIN_RENDERED_PT == 5.0, "type floor is the corpus 29th percentile")
+check(style.MIN_RENDERED_PT == 6.0, "type floor is 6.0 pt (v3)")
 check(style.STROKE["box"] == 0.36, "box stroke is the corpus mode")
 check(style.FAMILIES["blue"][1] == "#DEEBF7", "blue.light is Office Accent 5 Lighter 80%")
 from cvprfig import palettes as _P
 check(_P.DRAWIO["green"] == ("#D5E8D4", "#82B366"), "draw.io pairs are kept whole")
 check(len(_P.TAB10) == 10, "tab10 is available for plot panels")
+
+
+# ======================================================================== v3
+import tempfile as _tf, re as _re, struct as _st, zlib as _zl
+from cvprfig import ooxml as _OX
+import audit_pptx as _AP
+
+section("v3 type and maths")
+check(style.TYPE["node"]["size"] == 7.5 and style.WARN_RENDERED_PT == 6.5,
+      "body type 7.5 pt, warning tier 6.5 pt")
+_runs = T.parse_runs("$z_{1:4}$")
+check(_runs[0] == ("z", False, True, 0) and _runs[1][3] == -1 and not _runs[1][2],
+      "maths: variable italic, index upright and subscripted")
+check(T.plain("$N \\times C$") == "N × C", "binary operators are spaced like TeX")
+check(T.plain("$T-2$") == "T − 2" and T.plain("$-x$") == "−x", "minus: binary vs unary")
+check(T.plain("$\\times L$") == "×L", "an operator with no left operand is not spaced")
+check(T.plain("$\\hat z_{5:10}$")[0] == "ẑ", "accents compose (z-hat)")
+check(T.plain("cost \\$5") == "cost $5", "\\$ is a literal dollar")
+_sy = [x["key"] for x in T.symbols("$\\tilde c_s = c_s + W[d_1;\\dots;d_4]$")]
+check(_sy[:4] == ["c̃", "c", "W", "d"] and "[;]" in _sy, "symbol extraction keeps accents apart")
+check(T.symbols("BEV features z_{1:4}")[0]["upright"], "old upright markup is flagged")
+check([x["key"] for x in T.symbols("×N")] == ["N"], "a repeat badge names a symbol")
+with style.scope(1.2):
+    check(abs(style.TYPE["node"]["size"] - 9.0) < 1e-6, "type_scale scales the table")
+check(style.TYPE["node"]["size"] == 7.5, "...and restores it")
+
+section("v3 arrows")
+check(style.pick_preset(0.6) == ("sm", "sm"), "thin lines get the sm/sm head")
+check(abs(style.head_size(0.6, ("sm", "sm"), "office")[0] - 3.968) < 0.01,
+      "LibreOffice/PowerPoint clamp the head base at 1.984 pt")
+check(abs(style.head_size(0.6, ("sm", "sm"), "keynote")[0] - 1.572) < 0.01, "Keynote scales with lw")
+check(style.final_run(0.6) >= 2.5 * 3.96, "final run is 2.5 heads")
+
+
+def _fig(spec):
+    return Figure(spec)
+
+
+_g = _fig({"figure": {"width": 240}, "layout": "row", "gap": 12,
+           "panels": [{"id": "p", "body": [{"id": "a", "text": "A"}]},
+                      {"id": "q", "body": [{"id": "b", "text": "B", "dy": 30}]}],
+           "edges": [{"from": "a", "to": "b"}]})
+_r = _g.routes[0]
+check(len(_r.pts) == 4 and abs(_r.pts[-1][0] - _r.pts[-2][0]) >= style.final_run(0.6) - 0.01,
+      "a dog-leg keeps its final run")
+_g = _fig({"figure": {"width": 240}, "layout": "row", "gap": 12,
+           "panels": [{"id": "p", "body": [{"id": "a", "text": "A"}]},
+                      {"id": "q", "body": [{"id": "b", "text": "B", "dy": 2.5}]}],
+           "edges": [{"from": "a", "to": "b"}]})
+check(len(_g.routes[0].pts) == 2, "a near miss becomes one straight arrow, not a 2 pt jog")
+_g = _fig({"figure": {"width": 300}, "layout": "row", "gap": 4, "fit": "tight",
+           "panels": [{"id": "p", "body": [{"id": "a1", "text": "A"}, {"id": "a2", "text": "B"}]},
+                      {"id": "q", "body": [{"id": "b1", "text": "C", "dy": 30},
+                                           {"id": "b2", "text": "D", "dy": 30}]}],
+           "edges": [{"from": "a1.e", "to": "b1.w"}, {"from": "a2.e", "to": "b2.w"}]})
+_xs = sorted(set(round(r.pts[1][0], 1) for r in _g.routes))
+check(len(_xs) == 2 and abs(_xs[1] - _xs[0]) >= style.GEOM["lane"] - 0.01,
+      "two dog-legs in one corridor get separate lanes")
+check(_g.gaps[0] >= _g.corridor_demand()[0] - 0.01, "the corridor is widened to fit them")
+for _rot in range(4):
+    for _pts in ([(0, 0), (30, 0)], [(0, 0), (0, 20)], [(0, 0), (20, 0), (20, 15)],
+                 [(0, 0), (10, 0), (10, 15), (30, 15)], [(0, 0), (0, 10), (-20, 10), (-20, 25)],
+                 [(5, 5), (-10, 5), (-10, -20), (-30, -20)]):
+        _P = [(x, y) if _rot == 0 else ((-y, x) if _rot == 1 else ((-x, -y) if _rot == 2 else (y, -x)))
+              for x, y in _pts]
+        _geo = pptx_writer.connector_geometry(_P)
+        if _geo is None:
+            check(False, "connector geometry for %s" % (_P,))
+            continue
+        prst, off, ext, rot, fh, fv, adj = _geo
+        _xf = {"x": off[0], "y": off[1], "w": ext[0], "h": ext[1], "rot": rot / 60000.0,
+               "fh": fh, "fv": fv}
+        _back = [_OX._local(_xf)(p) for p in _OX._preset_path(prst, ext[0], ext[1],
+                                                                {"adj1": adj or 50000})]
+        if not all(abs(a[0] - b[0]) < 0.05 and abs(a[1] - b[1]) < 0.05 for a, b in zip(_back, _P)):
+            check(False, "connector round trip %s -> %s" % (_P, _back))
+check(True, "connector geometry round-trips 24 routes through the PPTX reader")
+
+section("v3 captions, ports and alignment")
+_g = _fig({"figure": {"width": 240}, "layout": "row",
+           "panels": [{"id": "p", "row": [{"id": "img", "shape": "image", "w": 30, "h": 20,
+                                            "caption": "a much wider caption here"},
+                                           {"id": "m", "text": "Module"}]}],
+           "edges": [{"from": "img", "to": "m"}]})
+_im = _g.nodes["img"]
+check(abs(_im.body()[2] - 30) < 0.01, "a wide caption no longer stretches its image")
+check(abs(_g.routes[0].pts[0][0] - (_im.body()[0] + 30)) < 0.01, "arrows leave the shape, not the caption")
+check(len(_g.routes[0].pts) == 2, "captioned shape and its neighbour share a centre line")
+check(_im.port("s")[1] > _im.body()[1] + _im.body()[3] + 3, "the south port sits below the caption")
+_g = _fig({"figure": {"width": 240}, "layout": "col",
+           "panels": [{"id": "p", "row": [{"id": "a", "text": "A"}, {"id": "b", "text": "Bee"}]},
+                      {"id": "q", "row": [{"id": "c", "text": "C", "align_x": "b"}]}]})
+check(abs(_g.nodes["c"].cx - _g.nodes["b"].cx) < 0.01, "align_x puts one node under another")
+_g = _fig({"figure": {"width": 240}, "layout": "row",
+           "panels": [{"id": "p", "title": "A rather long stage title", "body": [{"id": "a", "text": "A"}]}]})
+_tw = T.measure("A rather long stage title", style.TYPE["stage_title"]["size"], "times", True, True)[0]
+check(_g.items[0].w >= _tw, "a stage is never narrower than its title")
+_d = _tf.mkdtemp()
+open(os.path.join(_d, "paper.yaml"), "w").write(
+    "venue: iccv\nroles: {core: green.light}\nsymbols:\n  W: {meaning: projection, defined_in: caption}\n")
+_g = Figure({"paper": "paper.yaml", "body": [{"id": "a", "text": "$W$", "role": "core"}]}, base=_d)
+_svg = _g.tostring()
+check("#E2F0D9" in _svg and (_g.spec.get("symbols") or {}).get("W"), "paper.yaml supplies roles and symbols")
+check(style.resolve_color("core") == "#FBE5D6", "...without leaking into the next figure")
+
+section("v3 auditor")
+
+
+def _codes(spec, base=None):
+    _f, _rep = V.audit(spec, base=base)
+    return [r["code"] for r in _rep.rows if r["level"] in ("error", "warning")]
+
+
+_base = {"figure": {"width": 240}, "layout": "row",
+         "panels": [{"id": "p", "row": [{"id": "a", "text": "$x_t$"}, {"id": "op", "shape": "op", "op": "+"},
+                                          {"id": "b", "text": "Out"}]}],
+         "edges": [{"from": "a", "to": "op"}, {"from": "op", "to": "b"}]}
+_c = _codes(dict(_base))
+check(_c.count("undefined-symbol") == 2, "undefined symbols are errors (x and the oplus)")
+_c = _codes(dict(_base, symbols={"x_t": {"meaning": "input", "defined_in": "caption"},
+                                 "\\oplus": {"meaning": "sum", "defined_in": "caption"},
+                                 "Q": {"meaning": "unused", "defined_in": "caption"}},
+                 caption="Input $x_t$ is summed ($\\oplus$)."))
+check("undefined-symbol" not in _c and "symbol-not-in-caption" not in _c, "caption definitions are found")
+check("unused-symbol" in _c, "a registered symbol the figure never shows is reported")
+_c = _codes(dict(_base, symbols={"x_t": {"meaning": "input", "defined_in": "caption"},
+                                 "\\oplus": {"meaning": "sum", "defined_in": "caption"}},
+                 caption="Input is summed."))
+check(_c.count("symbol-not-in-caption") == 2, "a caption that never writes the symbol fails")
+_c = _codes(dict(_base, legend={"items": [{"text": "ghost", "color": "red", "kind": "dashed"}]}))
+check("legend-unused-entry" in _c, "a legend entry nothing uses is an error")
+_c = _codes({"figure": {"width": 240}, "body": [{"id": "a", "text": "A", "fill": "#3B82F6"},
+                                                {"id": "b", "text": "B"}],
+             "edges": [{"from": "a", "to": "b"}]})
+check("ai-palette" in _c, "Tailwind blue-500 is flagged")
+_c = _codes({"figure": {"width": 240}, "body": [{"id": "a", "text": "A", "size": 5.5}]})
+check("text-too-small" in _c, "5.5 pt fails the 6.0 pt floor")
+_png = os.path.join(_d, "tiny.png")
+_raw = b"".join(b"\x00" + b"\xff\xff\xff" * 40 for _ in range(30))
+_chunk = lambda t, d: _st.pack(">I", len(d)) + t + d + _st.pack(">I", _zl.crc32(t + d) & 0xffffffff)
+open(_png, "wb").write(b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", _st.pack(">IIBBBBB", 40, 30, 8, 2, 0, 0, 0))
+                       + _chunk(b"IDAT", _zl.compress(_raw)) + _chunk(b"IEND", b""))
+_c = _codes({"figure": {"width": 240}, "body": [{"id": "im", "shape": "image", "src": "tiny.png", "w": 60}]},
+            base=_d)
+check("image-low-ppi" in _c, "a 40 px image printed 60 pt wide (48 ppi) fails")
+
+section("v3 PPTX writer and auditor")
+_spec = load_path(os.path.join(ROOT, "templates", "framework-with-io.yaml"))
+_f = Figure(_spec, base=os.path.join(ROOT, "templates"))
+_pp = os.path.join(_d, "f.pptx")
+_info = pptx_writer.write(_f, _pp)
+_xml = zipfile.ZipFile(_pp).read("ppt/slides/slide1.xml").decode()
+check(_info["connectors_glued"] >= 8 and "<a:stCxn" in _xml, "arrows are glued connectors")
+check('w="sm" len="sm"' in _xml, "heads use the preset that matches the SVG")
+check("<p:bg>" in _xml, "the slide has an explicit background (Keynote)")
+minidom.parseString(_xml)
+check(True, "slide XML is well formed")
+_rep, _meta = _AP.audit(_pp, ref=os.path.join(ROOT, "templates", "framework-with-io.yaml"))
+check(_rep.counts()["error"] == 0, "the engine's own PPTX passes audit_pptx")
+_flat = _re.sub(r' baseline="-?\d+"', "", _xml)
+_zin = zipfile.ZipFile(_pp)
+_pp2 = os.path.join(_d, "flat.pptx")
+_zout = zipfile.ZipFile(_pp2, "w", zipfile.ZIP_DEFLATED)
+for _it in _zin.infolist():
+    _zout.writestr(_it, _flat if _it.filename == "ppt/slides/slide1.xml" else _zin.read(_it.filename))
+_zout.close()
+_spec2 = {"figure": {"width": 240}, "body": [{"id": "a", "text": "$z_{1:4}$ and $O_{5:10}$"}],
+          "symbols": {"z": {"meaning": "m", "defined_in": "figure"}, "O": {"meaning": "m", "defined_in": "figure"}}}
+_f2 = Figure(_spec2)
+_p3 = os.path.join(_d, "s.pptx")
+pptx_writer.write(_f2, _p3)
+_x3 = zipfile.ZipFile(_p3).read("ppt/slides/slide1.xml").decode()
+_z3 = zipfile.ZipFile(_p3)
+_p4 = os.path.join(_d, "s_flat.pptx")
+_zo = zipfile.ZipFile(_p4, "w", zipfile.ZIP_DEFLATED)
+for _it in _z3.infolist():
+    _zo.writestr(_it, _re.sub(r' baseline="-?\d+"', "", _x3) if _it.filename == "ppt/slides/slide1.xml"
+                 else _z3.read(_it.filename))
+_zo.close()
+_rep4, _ = _AP.audit(_p4)
+check(any(r["code"] == "lost-subscript" for r in _rep4.rows), "flattened subscripts are caught")
+_spec5 = {"figure": {"width": 240}, "body": [{"id": "a", "text": "A"}, {"id": "b", "text": "B"}],
+          "edges": [{"from": "a", "to": "b", "dash": True}],
+          "legend": {"items": [{"text": "flow", "kind": "dashed"}, {"text": "gone", "kind": "dashed",
+                                                                     "color": "red"}]}}
+_p5 = os.path.join(_d, "leg.pptx")
+pptx_writer.write(Figure(_spec5), _p5)
+_rep5, _ = _AP.audit(_p5)
+check([r["code"] for r in _rep5.rows].count("legend-orphan") == 1, "an orphaned legend entry is caught in the PPTX")
+check("<p:grpSp>" in zipfile.ZipFile(_p5).read("ppt/slides/slide1.xml").decode(), "the legend is a group")
 
 print("\n%s  (%d failure%s)" % ("FAILED" if FAILED else "ALL PASSED",
                                 len(FAILED), "" if len(FAILED) == 1 else "s"))

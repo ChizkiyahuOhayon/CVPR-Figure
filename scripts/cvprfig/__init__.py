@@ -6,7 +6,7 @@ layout in final rendered points, and writes editable vector output: SVG, PDF,
 PNG, EMF, native Visio (.vsdx) and native PowerPoint (.pptx).
 """
 
-__version__ = "1.0.0"
+__version__ = "3.0.0"
 
 from .figure import Figure          # noqa: F401
 from .miniyaml import load, load_path  # noqa: F401

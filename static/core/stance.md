@@ -8,12 +8,14 @@ they are *generic*. The tells, in the order reviewers notice them:
 | Tell | What it looks like | What a real figure does |
 |---|---|---|
 | Decorative colour | Every box a different saturated hue, rainbow gradients | 3–5 pale tints, each meaning one thing |
+| Web-UI palette | Tailwind blue-500, indigo, violet, emerald; pale card + same-hue border | The Office tint ladder the authors actually clicked |
 | Depth effects | Drop shadows, bevels, glow, glassmorphism | Flat fills, one hairline outline |
 | Even spacing everywhere | A perfect grid of identical rounded rectangles | Uneven, because the content is uneven |
 | Prose in boxes | "This module aggregates multi-scale features" | "Feature Aggregation" |
 | Free-floating arrows | Curves that start and end near, not on, a port | Orthogonal runs on port normals |
 | No data | Pure abstraction, no picture of the actual output | Real crops of inputs and results, embedded |
 | Icons | Gears, brains, clouds, robots, emoji | Tensors as slabs, encoders as trapezoids |
+| Undefined symbols | `c_s`, ⊕, `[·;·]` that only Section 3 explains | Every symbol named in a label or the caption |
 | A caption that repeats the picture | "Figure 1: The pipeline of our method." | A claim the figure demonstrates |
 
 Every one of these is a *default* that has to be actively overridden. This
@@ -22,8 +24,10 @@ skill overrides them in the engine so they cannot come back by accident.
 ## Non-negotiables
 
 1. **Design at final size.** All type sizes in a spec are in final rendered
-   points on the printed page. 6.5–8 pt is the working range; below 5.0 pt the
-   renderer refuses to stay silent. Never draw large and shrink.
+   points on the printed page. Module labels 7.5 pt, stage titles 8.5 pt —
+   the median of the template papers users want to match. Below 6.0 pt is an
+   error, below 6.5 pt a warning, module names never under 7.0 pt. Never draw
+   large and shrink; to enlarge everything use `type_scale`.
 2. **Colour carries meaning or it is grey.** A hue is spent on a semantic role
    — the contribution, a data stream, a stage — and that role keeps the same
    hue in every figure of the paper. Decoration gets `grey`.
@@ -39,7 +43,14 @@ skill overrides them in the engine so they cannot come back by accident.
    and no real output crop is a block diagram, not a paper figure. Leave
    `image` slots for them and fill them with actual data.
 8. **The figure must survive greyscale and 100% print.** No information may
-   live only in hue; no stroke thinner than 0.3 pt.
+   live only in hue; no stroke thinner than 0.19 pt.
+9. **Every symbol is defined** in a label or in the caption, written as maths
+   (`$z_t$`) so it matches the text. Every legend entry is used; every
+   meaningful line style is explained.
+10. **The audit follows the file.** Once the PPTX is handed over and edited, it
+    is the only source: audit it (`audit_pptx.py`), export the PDF from it
+    losslessly (`export_pptx.py`), audit the PDF (`audit_pdf.py`). Never
+    regenerate an edited figure from the spec.
 
 ## Default behaviour when the request is vague
 

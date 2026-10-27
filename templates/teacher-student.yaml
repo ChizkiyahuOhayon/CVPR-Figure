@@ -73,3 +73,14 @@ edges:
   - {from: th.e, to: lf.w, dash: flow, color: loss}
   - {from: sh.e, to: lr.w, dash: flow, color: loss}
   - {from: sh.e, to: lt.w}
+
+legend:
+  corner: se
+  dir: row
+  items:
+    - {text: "supervision", color: loss, kind: dashed}
+
+caption: >-
+  \textbf{The camera student learns where the LiDAR teacher looks.} Both
+  branches encode the same scene; dashed red lines are supervision: feature
+  and response distillation from the teacher, and the task loss.

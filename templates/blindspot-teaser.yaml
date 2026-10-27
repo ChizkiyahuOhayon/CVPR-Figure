@@ -18,24 +18,24 @@ panels:
     frame: none
     body:
       - row:
-          gap: 8
+          gap: 7
           align: center
           body:
-            - {id: inp, shape: framestrip, pattern: "####################",
+            - {id: inp, shape: framestrip, pattern: "############",
                cell: 2.6, cellgap: 0.7, h: 13, on_fill: steel.mid,
-               caption: "input", caption_size: 5.8}
-            - {id: sys, text: "frozen\nsystem", role: baseline, wrap: 42, size: 6.6}
+               caption: "input"}
+            - {id: sys, text: "frozen\nsystem", role: baseline}
             - group:
                 id: seen_wide
                 frame: region
                 frame_color: rose.strong
                 fill: rose.pale
-                pad: 5
+                pad: 4
                 padt: 14
                 title: "read by the honest measure"
+                title_size: 7.0
                 title_pos: above
                 title_align: right
-                title_size: 6.0
                 title_bold: false
                 title_italic: true
                 title_color: "#953735"
@@ -49,16 +49,16 @@ panels:
                         fill: steel.pale
                         pad: 4
                         title: "read by the standard metric"
+                        title_size: 7.0
                         title_pos: above
                         title_align: left
-                        title_size: 6.0
                         title_bold: false
                         title_italic: true
                         title_color: "#2E75B6"
                         body:
-                          - {id: c1, text: "*α*", role: backbone, w: 26, h: 19, size: 8.0}
-                    - {id: c2, text: "*β*", role: core, w: 26, h: 19, size: 8.0}
-                    - {id: c3, text: "*γ*", role: core, w: 26, h: 19, size: 8.0}
+                          - {id: c1, text: "$\\alpha$", role: backbone, w: 24, h: 19, size: 8.0}
+                    - {id: c2, text: "$\\beta$", role: core, w: 24, h: 19, size: 8.0}
+                    - {id: c3, text: "$\\gamma$", role: core, w: 24, h: 19, size: 8.0}
 
   - id: bottom
     frame: none
@@ -72,24 +72,24 @@ panels:
                 gap: 4
                 body:
                   - {id: m_a, text: "standard metric", role: baseline, minw: 104}
-                  - {id: v_a, shape: text, size: 6.6, text_color: "#2E75B6",
+                  - {id: v_a, shape: text, text_color: "#2E75B6",
                      text: "0.00  →  **0.00**"}
-                  - {id: n_a, shape: text, size: 6.0, text_color: muted,
+                  - {id: n_a, shape: text, text_color: muted,
                      text: "*unchanged by construction*"}
             - id: lane_b
               col:
                 gap: 4
                 body:
                   - {id: m_b, text: "honest measure", role: memory, minw: 104}
-                  - {id: v_b, shape: text, size: 6.6, text_color: "#953735",
+                  - {id: v_b, shape: text, text_color: "#953735",
                      text: "0.00  →  **0.00**"}
-                  - {id: n_b, shape: text, size: 6.0, text_color: muted,
+                  - {id: n_b, shape: text, text_color: muted,
                      text: "*large, same system*"}
 
   - id: thesis
     frame: none
     body:
-      - {id: line, shape: text, size: 6.4, text_color: "#BF9000", italic: true,
+      - {id: line, shape: text, text_color: "#BF9000", italic: true, wrap: 225,
          text: "the components the standard metric cannot read carry the failure"}
 
 edges:
@@ -99,4 +99,16 @@ edges:
   - {from: seen_wide.s, to: m_b.n, color: rose.strong, mid: 0.55}
 
 notes:
-  - {text: "regime A  →  regime B", near: inp.n, dy: -6.5, size: 6.0, color: muted}
+  - {text: "regime A  →  B", near: inp.nw, dy: -6.5, anchor: start, color: muted}
+
+symbols:
+  "\\alpha": {meaning: "modal means", defined_in: caption}
+  "\\beta":  {meaning: "Laplace scales", defined_in: caption}
+  "\\gamma": {meaning: "mixture weights", defined_in: caption}
+
+caption: >-
+  \textbf{Best-of-$K$ evaluation reads a strict subset of the prediction.}
+  The frozen forecaster emits modal means $\alpha$, scales $\beta$ and mixture
+  weights $\gamma$; the standard metric reads $\alpha$ alone (blue), an honest
+  measure reads all three (red). From regime A to regime B the first does
+  not move, by construction, while the second does.

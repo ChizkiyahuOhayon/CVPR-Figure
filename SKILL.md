@@ -11,7 +11,11 @@ description: >-
   spec through a deterministic layout engine whose palette, typography and geometry
   were measured out of 349 figure PDFs from published CVPR/ICCV/ECCV/AAAI papers,
   then audits the result against a checklist of the things that make a diagram
-  look machine-generated. Works from a paper section, an abstract, a method
+  look machine-generated, checks that every symbol is defined in a label or the
+  caption, and — after the user hand-edits the PPTX in WPS, PowerPoint or
+  Keynote — audits the edited PPTX and the exported PDF (45-degree arrowheads,
+  lost subscripts, orphaned legend entries, downsampled images, tiny type).
+  Works from a paper section, an abstract, a method
   description, a PyTorch nn.Module source tree, or an mmengine/mmdet
   `model = dict(...)` config —
   根据代码出图、根据论文内容出图.  Do not use for data plots — bar charts, curves,
@@ -42,8 +46,8 @@ Read fragments from disk as directed below. Do not work from memory of this file
 
 1. [static/core/stance.md](static/core/stance.md) — the non-negotiables and the
    list of tells this skill exists to suppress.
-2. [static/core/contract.md](static/core/contract.md) — the seven questions to
-   answer before drawing.
+2. [static/core/contract.md](static/core/contract.md) — the eight questions to
+   answer before drawing, including the symbol table.
 
 Then read [manifest.yaml](manifest.yaml) to see which further fragment the
 current job needs.
@@ -57,7 +61,12 @@ Answer, in your reply to the user, before writing any spec:
 3. which element is the contribution;
 4. the semantic colour map;
 5. venue and column width;
-6. which real crops will fill the `image` slots.
+6. which real crops will fill the `image` slots;
+7. the symbol table: every symbol the figure will show, its one-sentence
+   meaning, and whether a label or the caption defines it — keep only symbols
+   the text also uses, write the rest as words;
+8. who will hand-edit the PPTX and which application exports the paper PDF
+   (WPS, Keynote, LibreOffice, PowerPoint) — this sets `pptx_app`.
 
 If the user gave a paper section or code, derive 1–4 from it and state your
 reading back in two or three lines so it can be corrected cheaply. Ask a
@@ -148,7 +157,18 @@ Working rules:
 - `image` slots stay placeholders until the user supplies real crops — never
   invent an output render, and never pass off a crop from another paper as
   your own result;
-- keep labels to noun phrases of six words or fewer.
+- keep labels to noun phrases of six words or fewer;
+- **write every variable as maths** — `"BEV features $z_{1:4}$"`,
+  `"$\tilde c_s$"`, `"$\times L$"` — so it is italic exactly as in the
+  text; fill in `symbols:` and `caption:` (or `caption_tex:
+  sec/3_method.tex#fig:label`) from the contract, see
+  [references/symbols-and-captions.md](references/symbols-and-captions.md);
+- several figures in one paper share a `paper.yaml` (`paper: paper.yaml`)
+  holding the role colours and the symbol table, so they cannot drift;
+- line things up with `align_x: other` / `align_y: other`, not with
+  hand-measured spacers;
+- never use web-UI colours (Tailwind, Material, Bootstrap) — fills are pale
+  Office tints, outlines black, saturated colour only on arrows and labels.
 
 ## 5. Render
 
@@ -163,12 +183,18 @@ is. Rasters are taken from the PDF and the produced pixel size is checked
 against `--dpi`, because some converters silently emit a 96 dpi screenshot.
 Use 600 dpi for camera-ready, 1200 for a poster.
 
-Read the report. It prints the canvas size, the node and edge counts, and — if
-the layout is wider than the column — the **effective point size** after
-scaling. Under 5.0 pt is a failure; 5.0–5.6 pt is a warning you should have a
-reason for. Those thresholds are the 29th and 40th percentiles of rendered
-glyph size in the reference corpus — see
-[references/corpus-report.md](references/corpus-report.md).
+Read the report. It prints the canvas size, the node and edge counts, how many
+PPTX arrows are glued connectors (and which stay freeform), and — if the
+layout is wider than the column — the **effective point size** after scaling.
+Body labels are 7.5 pt, stage titles 8.5 pt; under 6.0 pt is a failure,
+6.0–6.5 pt a warning, and module names stay at 7.0 pt or more — the median of
+the template papers users want to match, see
+[references/corpus-report.md](references/corpus-report.md). To make
+everything bigger, set `figure: {type_scale: 1.1}` and re-render; never
+enlarge labels one by one in PowerPoint.
+
+The PDF is written losslessly (LibreOffice with no downsampling) and audited
+automatically when PyMuPDF is installed.
 
 For editing by hand afterwards, load
 [references/visio-workflow.md](references/visio-workflow.md). Generate the
@@ -184,7 +210,14 @@ python3 scripts/make_stencil.py -o templates/stencil -f vsdx,pptx
 python3 scripts/validate.py spec.yaml --svg out/overview.svg
 ```
 
-Fix every `FAIL`. Justify or fix every `WARN`. Then do the eye pass in
+Fix every `FAIL`. Justify or fix every `WARN`. Beyond legibility and palette,
+the auditor now checks that every symbol is defined (`undefined-symbol`,
+`symbol-not-in-caption`), that the legend and the figure agree both ways
+(`legend-unused-entry`, `unexplained-line-style`), that no bent arrow ends too
+close to its last bend (`short-final-segment`), that wires do not share a
+corridor, that no arrow runs through text, that embedded pictures carry 600
+ppi at print size, and that no colour is a web-UI default (`ai-palette`).
+Then do the eye pass in
 [references/anti-ai-checklist.md](references/anti-ai-checklist.md): squint
 test, trace one path, cover the caption, convert to greyscale.
 
@@ -197,9 +230,31 @@ Load [references/latex-integration.md](references/latex-integration.md) and
 hand back:
 
 - the `\begin{figure*}` block with `width=\linewidth`;
-- a caption that states the claim, not the picture;
+- a caption that states the claim, names the parts, explains the colours and
+  **defines every symbol the figure shows**, in reading order — then tell the
+  user to recompile and check the page count;
 - the spec file alongside the PDF so the figure can be regenerated;
-- an explicit list of the `image` slots still holding placeholders.
+- an explicit list of the `image` slots still holding placeholders;
+- the hand-over rule, in one line: once they edit the PPTX, it is the only
+  source — export the PDF from it with `export_pptx.py`, never re-render the
+  spec over it.
+
+## 8. After the user edits the PPTX — required
+
+Whenever the user comes back with a hand-edited PPTX or a PDF exported from
+one, audit the files that ship, not the spec. Load
+[references/after-handover.md](references/after-handover.md).
+
+```bash
+python3 scripts/audit_pptx.py fig.pptx --width 496.8 --spec spec.yaml   # or --ref source.svg
+python3 scripts/export_pptx.py fig.pptx --width 496.8                   # lossless, audits the PDF
+python3 scripts/audit_pdf.py fig.pdf --width 496.8
+```
+
+`audit_pptx.py` works on any PPTX, including FigGenie's. Pass the width the
+figure is included at. Application differences (arrowhead sizes, Keynote's
+whole-point type, LibreOffice's default 300 dpi JPEG export) are in
+[references/app-compatibility.md](references/app-compatibility.md).
 
 ## Revising an existing figure
 

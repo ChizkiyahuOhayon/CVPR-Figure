@@ -8,8 +8,19 @@ most forgiving route onto a Visio canvas.
 
 Every module is a real DrawingML shape with its own geometry, fill, outline
 and text body; raster panels are embedded as pictures.
+
+v3: arrows are real connectors.  A route with at most two bends becomes a
+``straightConnector1`` / ``bentConnector2`` / ``bentConnector3`` glued to its
+two modules with ``stCxn``/``endCxn``, so a module moved by hand drags its
+arrows with it.  Routes with three or more bends cannot be expressed as an
+Office connector and stay freeform; ``write()`` reports which ones.  Custom
+polygons carry the same four connection sites as a rectangle (0 top, 1 left,
+2 bottom, 3 right) so every module glues the same way.  The legend is one
+group with a sub-group per entry, so deleting an entry removes its swatch and
+its text together.
 """
 
+import math
 import os
 import zipfile
 import xml.sax.saxutils as sx
@@ -18,6 +29,7 @@ from . import edges as edgemod, layout as L, shapes as SH, style, text as T
 
 ESC = sx.escape
 EMU = 12700.0          # EMU per point
+SCRIPT_COMPENSATION = 1.15
 A = "http://schemas.openxmlformats.org/drawingml/2006/main"
 
 
@@ -38,6 +50,12 @@ class Deck(object):
         self.media = []          # (name, bytes)
         self.rels = []           # (rId, target)
         self.next_id = 2
+        self.glue = {}           # node id -> (shape id, {side: site index}, box)
+        self.freeform = []       # edges that could not become connectors
+        self.split = []          # edges whose arrowhead got its own segment
+        self.glued = 0
+        self._last = None        # (shape id, kind) of the last shape emitted
+        self._stack = []         # open groups
 
     def sid(self):
         i = self.next_id
@@ -51,7 +69,7 @@ class Deck(object):
 
     # ------------------------------------------------------------- pieces
     def _xfrm(self, x, y, w, h, rot=0):
-        r = ' rot="%d"' % int(rot * 60000) if rot else ""
+        r = ' rot="%d"' % int((rot % 360) * 60000) if rot else ""
         return ('<a:xfrm%s><a:off x="%s" y="%s"/><a:ext cx="%s" cy="%s"/></a:xfrm>'
                 % (r, e(x), e(y), e(max(w, 0.1)), e(max(h, 0.1))))
 
@@ -60,18 +78,22 @@ class Deck(object):
             return "<a:noFill/>"
         return '<a:solidFill><a:srgbClr val="%s"/></a:solidFill>' % hx(fill)
 
-    def _ln(self, color, lw, dash=None, head=None, tail=None):
+    def _ln(self, color, lw, dash=None, head=None, tail=None, preset=None):
+        """Line properties.  ``head``/``tail`` are the start/end arrowheads;
+        ``preset`` is the (w, len) pair chosen by style.pick_preset so the head
+        PowerPoint draws matches the one in the SVG."""
         if not color or color == "none" or not lw:
             return '<a:ln><a:noFill/></a:ln>'
+        w_, len_ = preset or style.pick_preset(lw)
         parts = ['<a:ln w="%s" cap="flat">' % e(lw),
                  '<a:solidFill><a:srgbClr val="%s"/></a:solidFill>' % hx(color)]
         if dash:
             parts.append('<a:prstDash val="dash"/>')
         parts.append('<a:miter lim="800000"/>')
         if head:
-            parts.append('<a:headEnd type="triangle" w="med" len="med"/>')
+            parts.append('<a:headEnd type="triangle" w="%s" len="%s"/>' % (w_, len_))
         if tail:
-            parts.append('<a:tailEnd type="triangle" w="med" len="med"/>')
+            parts.append('<a:tailEnd type="triangle" w="%s" len="%s"/>' % (w_, len_))
         parts.append('</a:ln>')
         return "".join(parts)
 
@@ -85,7 +107,14 @@ class Deck(object):
         ts = tstyle or {}
         vert = ts.get("vert", "")
         font = ts.get("font", "Times New Roman")
-        sz = str(int(round(ts.get("size", 7.0) * 100)))
+        size = float(ts.get("size", 7.0))
+        if getattr(self.fig, "arrow_app", "") == "keynote":
+            size = float(math.ceil(size - 0.01))     # Keynote keeps whole points only
+        sz = str(int(round(size * 100)))
+        # Office applications shrink a baseline-shifted run on their own
+        # (LibreOffice to 58 %, Keynote to 67 %), on top of the size given.
+        # Writing scripts 15 % larger lands them near the SVG's 72 %.
+        sz_script = str(int(round(size * 100 * SCRIPT_COMPENSATION)))
         col = hx(ts.get("color", "#000000"))
         b = ' b="1"' if ts.get("bold") else ""
         i = ' i="1"' if ts.get("italic") else ""
@@ -104,6 +133,8 @@ class Deck(object):
                             '<a:t>%s</a:t></a:r>'
                             % (sz, ' b="1"' if rb else "", ' i="1"' if ri else "",
                                base, col, font, font, ESC(chars)))
+                if script:
+                    runs[-1] = runs[-1].replace('sz="%s"' % sz, 'sz="%s"' % sz_script, 1)
             if not runs:
                 runs.append('<a:endParaRPr lang="en-US" sz="%s"/>' % sz)
             paras.append('<a:pPr algn="%s"/>%s' % (algn, "".join(runs)))
@@ -113,10 +144,32 @@ class Deck(object):
                 % (anchor, wrap, ' vert="%s"' % vert if vert else "", body))
 
     # ------------------------------------------------------------- shapes
+    def add(self, xml):
+        (self._stack[-1][1] if self._stack else self.shapes).append(xml)
+
+    def begin_group(self, name):
+        self._stack.append((name, []))
+
+    def end_group(self, box):
+        name, kids = self._stack.pop()
+        if not kids:
+            return None
+        i = self.sid()
+        x, y, w, h = box
+        xf = ('<a:xfrm><a:off x="%s" y="%s"/><a:ext cx="%s" cy="%s"/>'
+              '<a:chOff x="%s" y="%s"/><a:chExt cx="%s" cy="%s"/></a:xfrm>'
+              % (e(x), e(y), e(w), e(h), e(x), e(y), e(w), e(h)))
+        self.add('<p:grpSp><p:nvGrpSpPr><p:cNvPr id="%d" name="%s"/><p:cNvGrpSpPr/>'
+                 '<p:nvPr/></p:nvGrpSpPr><p:grpSpPr>%s</p:grpSpPr>%s</p:grpSp>'
+                 % (i, ESC(name), xf, "".join(kids)))
+        return i
+
     def sp(self, name, x, y, w, h, geom, fill, line, lw, dash=None, label=None,
            tstyle=None, rot=0):
         i = self.sid()
-        self.shapes.append(
+        self._last = (i, "poly" if "custGeom" in geom else
+                      ("ellipse" if 'prst="ellipse"' in geom else "rect"), (x, y, w, h))
+        self.add(
             '<p:sp><p:nvSpPr><p:cNvPr id="%d" name="%s %d"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
             '<p:spPr>%s%s%s%s</p:spPr>%s</p:sp>'
             % (i, name, i, self._xfrm(x, y, w, h, rot), geom, self._fill(fill),
@@ -140,7 +193,7 @@ class Deck(object):
                        fill, line, lw, None, label, tstyle)
 
     def polygon(self, points, fill, line, lw, dash=None, label=None, tstyle=None,
-                closed=True, name="Shape"):
+                closed=True, name="Shape", sites=None):
         xs = [p[0] for p in points]; ys = [p[1] for p in points]
         x0, x1 = min(xs), max(xs); y0, y1 = min(ys), max(ys)
         w = max(x1 - x0, 0.01); h = max(y1 - y0, 0.01)
@@ -153,13 +206,24 @@ class Deck(object):
         if closed:
             path.append("<a:close/>")
         path.append("</a:path>")
-        geom = ('<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/>'
+        # Four connection sites at the mid-edges of the bounding box, in the
+        # order a rectangle uses, so arrows glue to a trapezoid like to a box.
+        # Sites are written as guides -- fractions of w and h -- as the
+        # presets do; LibreOffice misplaces literal coordinates here.  They sit
+        # where layout.port_frac puts the ports (n, w, s, e).
+        fr = sites or [(0.5, 0.0), (0.0, 0.5), (0.5, 1.0), (1.0, 0.5)]
+        gds = "".join('<a:gd name="cx%d" fmla="*/ w %d 100000"/><a:gd name="cy%d" fmla="*/ h %d 100000"/>'
+                      % (k, int(round(fx * 100000)), k, int(round(fy * 100000)))
+                      for k, (fx, fy) in enumerate(fr))
+        cxn = "".join('<a:cxn ang="%d"><a:pos x="cx%d" y="cy%d"/></a:cxn>' % (ang, k, k)
+                      for k, ang in enumerate((16200000, 10800000, 5400000, 0)))
+        geom = ('<a:custGeom><a:avLst/><a:gdLst>%s</a:gdLst><a:ahLst/><a:cxnLst>%s</a:cxnLst>'
                 '<a:rect l="0" t="0" r="r" b="b"/><a:pathLst>%s</a:pathLst></a:custGeom>'
-                % "".join(path))
+                % (gds, cxn, "".join(path)))
         return self.sp(name, x0, y0, w, h, geom, fill, line, lw, dash, label, tstyle)
 
     def polyline(self, points, color, lw, dash=None, arrow_end=True, arrow_start=False,
-                 name="Flow"):
+                 name="Flow", preset=None):
         xs = [p[0] for p in points]; ys = [p[1] for p in points]
         x0, x1 = min(xs), max(xs); y0, y1 = min(ys), max(ys)
         w = max(x1 - x0, 0.01); h = max(y1 - y0, 0.01)
@@ -173,20 +237,59 @@ class Deck(object):
                 '<a:rect l="0" t="0" r="r" b="b"/><a:pathLst>%s</a:pathLst></a:custGeom>'
                 % "".join(path))
         i = self.sid()
-        self.shapes.append(
+        self.add(
             '<p:sp><p:nvSpPr><p:cNvPr id="%d" name="%s %d"/><p:cNvSpPr/><p:nvPr/></p:nvSpPr>'
             '<p:spPr>%s%s<a:noFill/>%s</p:spPr>%s</p:sp>'
             % (i, name, i, self._xfrm(x0, y0, w, h), geom,
-               self._ln(color, lw, dash, arrow_start, arrow_end), self._txt(None, None)))
+               self._ln(color, lw, dash, arrow_start, arrow_end, preset),
+               self._txt(None, None)))
         return i
 
-    def textbox(self, x, y, w, h, label, tstyle, name="Label"):
+    def connector(self, points, color, lw, dash=None, arrow_end=True, arrow_start=False,
+                  start=None, end=None, name="Flow", preset=None):
+        """A real Office connector through ``points`` (2-4 axis-aligned
+        points), glued to ``start``/``end`` = (shape id, site index).
+        Returns the shape id, or None when the route has no connector form."""
+        geo = connector_geometry(points)
+        if geo is None:
+            return None
+        prst, off, ext, rot, fh, fv, adj = geo
         i = self.sid()
-        self.shapes.append(
+        attrs = (' rot="%d"' % rot if rot else "") + (' flipH="1"' if fh else "") + \
+                (' flipV="1"' if fv else "")
+        xf = ('<a:xfrm%s><a:off x="%s" y="%s"/><a:ext cx="%s" cy="%s"/></a:xfrm>'
+              % (attrs, e(off[0]), e(off[1]), e(ext[0]), e(ext[1])))
+        av = ('<a:avLst><a:gd name="adj1" fmla="val %d"/></a:avLst>' % adj
+              if adj is not None else "<a:avLst/>")
+        cx = ""
+        if start:
+            cx += '<a:stCxn id="%d" idx="%d"/>' % start
+        if end:
+            cx += '<a:endCxn id="%d" idx="%d"/>' % end
+        self.add('<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="%d" name="%s %d"/>'
+                 '<p:cNvCxnSpPr>%s</p:cNvCxnSpPr><p:nvPr/></p:nvCxnSpPr>'
+                 '<p:spPr>%s<a:prstGeom prst="%s">%s</a:prstGeom><a:noFill/>%s</p:spPr>'
+                 '</p:cxnSp>'
+                 % (i, name, i, cx, xf, prst, av,
+                    self._ln(color, lw, dash, arrow_start, arrow_end, preset)))
+        if start or end:
+            self.glued += 1
+        return i
+
+    def textbox(self, x, y, w, h, label, tstyle, name="Label", rot=0):
+        # Slack on the free side(s): Keynote shrinks text that it measures as
+        # wider than its box, and its Times metrics run slightly wide.
+        slack = max(4.0, 0.12 * w)
+        al = (tstyle or {}).get("align", "ctr")
+        x = x - (slack if al == "r" else (0.0 if al == "l" else slack / 2.0))
+        w = w + slack
+        i = self.sid()
+        self._last = (i, "rect", (x, y, w, h))
+        self.add(
             '<p:sp><p:nvSpPr><p:cNvPr id="%d" name="%s %d"/>'
             '<p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>'
             '<p:spPr>%s<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/></p:spPr>%s</p:sp>'
-            % (i, name, i, self._xfrm(x, y, w, h), self._txt(label, tstyle, "ctr")))
+            % (i, name, i, self._xfrm(x, y, w, h, rot), self._txt(label, tstyle, "ctr")))
         return i
 
     def picture(self, x, y, w, h, path):
@@ -198,7 +301,8 @@ class Deck(object):
         self.media.append((name, blob))
         rid = self.add_rel("../media/" + name)
         i = self.sid()
-        self.shapes.append(
+        self._last = (i, "rect", (x, y, w, h))
+        self.add(
             '<p:pic><p:nvPicPr><p:cNvPr id="%d" name="Panel %d"/>'
             '<p:cNvPicPr><a:picLocks noChangeAspect="0"/></p:cNvPicPr><p:nvPr/></p:nvPicPr>'
             '<p:blipFill><a:blip r:embed="%s"/><a:stretch><a:fillRect/></a:stretch></p:blipFill>'
@@ -207,6 +311,100 @@ class Deck(object):
             '</p:spPr></p:pic>'
             % (i, i, rid, self._xfrm(x, y, w, h), e(style.STROKE["hairline"])))
         return i
+
+
+# ------------------------------------------------------------- connectors
+_ROT = {0: (1, 0, 0, 1), 5400000: (0, -1, 1, 0),
+        10800000: (-1, 0, 0, -1), 16200000: (0, 1, -1, 0)}   # screen, clockwise
+
+
+def _apply(m, v):
+    return (m[0] * v[0] + m[1] * v[1], m[2] * v[0] + m[3] * v[1])
+
+
+def _canonical(prst, W, H, adj):
+    if prst == "straightConnector1":
+        return [(0.0, 0.0), (W, H)]
+    if prst == "bentConnector2":
+        return [(0.0, 0.0), (W, 0.0), (W, H)]
+    a = W * adj / 100000.0
+    return [(0.0, 0.0), (a, 0.0), (a, H), (W, H)]
+
+
+def connector_geometry(points, tol=0.05):
+    """Find the preset connector, rotation and flips that reproduce
+    ``points``.  Returns (prst, off, ext, rot, flipH, flipV, adj1) or None.
+
+    An Office connector is drawn in a local box whose top-left is its start
+    and bottom-right its end; the box is flipped, then rotated about its
+    centre.  So rendered = C + R . F . (L - (W/2, H/2)) with C the midpoint
+    of start and end, and the solver simply tries the 16 rotation/flip
+    combinations and keeps the one whose canonical path lands on the route.
+    """
+    n = len(points)
+    if n < 2 or n > 4:
+        return None
+    prst = {2: "straightConnector1", 3: "bentConnector2", 4: "bentConnector3"}[n]
+    p0, pn = points[0], points[-1]
+    C = ((p0[0] + pn[0]) / 2.0, (p0[1] + pn[1]) / 2.0)
+    for rot in (0, 5400000, 16200000, 10800000):
+        R = _ROT[rot]
+        Rinv = (R[0], R[2], R[1], R[3])              # transpose = inverse
+        for fh in (False, True):
+            for fv in (False, True):
+                F = (-1 if fh else 1, 0, 0, -1 if fv else 1)
+                loc = [_apply(F, _apply(Rinv, (p[0] - p0[0], p[1] - p0[1]))) for p in points]
+                W, H = loc[-1]
+                if W < -tol or H < -tol:
+                    continue
+                W, H = max(W, 0.0), max(H, 0.0)
+                adj = None
+                if prst == "bentConnector3":
+                    if W < 0.5:
+                        continue
+                    adj = int(round(loc[1][0] / W * 100000))
+                want = _canonical(prst, W, H, adj if adj is not None else 0)
+                if all(abs(a[0] - b[0]) <= tol + 0.002 * W and abs(a[1] - b[1]) <= tol
+                       for a, b in zip(loc, want)):
+                    off = (C[0] - W / 2.0, C[1] - H / 2.0)
+                    return prst, off, (W, H), rot, fh, fv, adj
+    return None
+
+
+SITES = {"rect": {"n": 0, "w": 1, "s": 2, "e": 3},
+         "poly": {"n": 0, "w": 1, "s": 2, "e": 3},
+         "ellipse": {"n": 0, "w": 2, "s": 4, "e": 6}}
+
+
+def _register(d, it, box=None):
+    """Remember the shape just emitted as the glue target for ``it``, if its
+    connection sites coincide with the node's ports."""
+    if not it.id or d._last is None:
+        return
+    sid, kind, (x, y, w, h) = d._last
+    bx, by, bw, bh = box or it.body()
+    if abs(x - bx) > 0.3 or abs(y - by) > 0.3 or abs(w - bw) > 0.3 or abs(h - bh) > 0.3:
+        return
+    d.glue[it.id] = (sid, SITES[kind])
+
+
+def _end_glue(d, item, side, pt):
+    g = d.glue.get(item.id) if item is not None else None
+    if not g or side not in g[1]:
+        return None
+    port = item.port(side)
+    if abs(port[0] - pt[0]) > 0.3 or abs(port[1] - pt[1]) > 0.3:
+        return None
+    return (g[0], g[1][side])
+
+
+def _head_triangle(tip, prev, length, width):
+    dx, dy = tip[0] - prev[0], tip[1] - prev[1]
+    L = math.hypot(dx, dy) or 1.0
+    ux, uy = dx / L, dy / L
+    bx, by = tip[0] - ux * length, tip[1] - uy * length
+    return [tip, (bx - uy * width / 2.0, by + ux * width / 2.0),
+            (bx + uy * width / 2.0, by - ux * width / 2.0)]
 
 
 # ------------------------------------------------------------------ emit
@@ -218,9 +416,17 @@ def _tstyle(spec, fig, over=None):
     rot = spec.get("rotate")
     if rot in (90, -90, 270):
         d["vert"] = "vert270" if rot == 90 else "vert"
+    d["align"] = {"start": "l", "left": "l", "end": "r", "right": "r"}.get(
+        spec.get("anchor"), "ctr")
     if over:
         d.update(over)
     return d
+
+
+GLUABLE = ("box", "roundbox", "sharpbox", "rect", "bar", "trapezoid", "encoder",
+           "invtrapezoid", "decoder", "chevron", "parallelogram", "hexagon", "plane",
+           "circle", "ellipse", "image", "photo", "imagestack", "text", "note",
+           "mathlabel")
 
 
 def _emit_node(d, it, fig):
@@ -229,12 +435,11 @@ def _emit_node(d, it, fig):
     fill, stroke, tc = SH.node_colors(s)
     lw = style.stroke_width(s.get("lw"), style.STROKE["box"])
     dash = bool(s.get("dash"))
-    x, y, w, h = it.x, it.y, it.w, it.h
-    if s.get("caption"):
-        h -= s["_cap_h"] + float(s.get("caption_gap", 3.0))
+    x, y, w, h = it.body()
     ts = _tstyle(s, fig)
     label = s.get("text") or None
 
+    d._last = None
     if shape in ("box", "roundbox"):
         d.rect(x, y, w, h, fill, stroke, lw, dash, label, ts, True)
     elif shape in ("sharpbox", "rect", "bar"):
@@ -242,12 +447,17 @@ def _emit_node(d, it, fig):
     elif shape in ("trapezoid", "encoder", "invtrapezoid", "decoder", "chevron",
                    "parallelogram", "hexagon", "plane"):
         from .vsdx import _poly_points
-        d.polygon(_poly_points(shape, s, x, y, w, h), fill, stroke, lw, dash, label, ts)
+        pts = _poly_points(shape, s, x, y, w, h)
+        # the polygon's own box can differ from the node box only if a point
+        # lies inside it on every side, which none of these shapes does
+        d.polygon(pts, fill, stroke, lw, dash, label, ts,
+                  sites=[L.port_frac(shape, s, side, w, h) for side in ("n", "w", "s", "e")])
     elif shape in ("circle", "ellipse"):
         d.ellipse(x, y, w, h, fill, stroke, lw, label, ts)
     elif shape in ("circleop", "op"):
         dd = min(w, h); cx, cy = x + w / 2.0, y + h / 2.0
         d.ellipse(cx - dd / 2, cy - dd / 2, dd, dd, "#FFFFFF", stroke, lw)
+        _register(d, it)
         k = dd * 0.28
         sym = s.get("op", s.get("text", "+"))
         if sym in ("+", "add", "sum", "oplus"):
@@ -335,7 +545,8 @@ def _emit_node(d, it, fig):
         else:
             d.rect(x, y, w, h, "#F2F2F2", style.FRAME_GREY, style.STROKE["hairline"], True,
                    s.get("text") or "image",
-                   _tstyle(s, fig, {"size": 6.0, "color": style.MUTED_INK}), False, "ImageSlot")
+                   _tstyle(s, fig, {"size": style.TYPE["caption"]["size"],
+                                    "color": style.MUTED_INK}), False, "ImageSlot")
     elif shape in ("text", "note", "mathlabel"):
         d.textbox(x, y, w, h, label, ts)
     elif shape == "ellipsis":
@@ -347,9 +558,11 @@ def _emit_node(d, it, fig):
         return
     else:
         d.rect(x, y, w, h, fill, stroke, lw, dash, label, ts, True)
+    if shape in GLUABLE:
+        _register(d, it, (x, y, w, h))
 
     if s.get("caption"):
-        d.textbox(x, y + h + float(s.get("caption_gap", 3.0)), w, s["_cap_h"] + 1,
+        d.textbox(it.x, y + h + float(s.get("caption_gap", 3.0)), it.w, s["_cap_h"] + 1,
                   s["caption"], _tstyle(s, fig, {"size": s["_cap_size"], "bold": False,
                                                  "italic": False}), "Caption")
     if s.get("badge"):
@@ -369,9 +582,11 @@ def _emit_container(d, it, fig):
                                      ink=True)
         if frame in (None, "none", False):
             stroke = "none"
+        d._last = None
         d.rect(it.x, it.y, it.w, it.h, fill, stroke,
                style.stroke_width(s.get("frame_lw"), style.STROKE["frame"]),
                frame in ("dashed", "region", True), None, None, True, "Stage")
+        _register(d, it)
     title = s.get("title")
     if title:
         ts = float(s.get("title_size", style.TYPE["stage_title"]["size"]))
@@ -405,28 +620,99 @@ def _emit_container(d, it, fig):
 
 
 def _emit_edges(d, fig):
-    for ed in (fig.spec.get("edges") or []):
-        a, sa = edgemod.resolve_ref(ed["from"], fig.nodes)
-        c, sb = edgemod.resolve_ref(ed["to"], fig.nodes)
-        if sa is None or sb is None:
-            da, db = edgemod.auto_sides(a, c)
-            sa = sa or da
-            sb = sb or db
-        pts = edgemod._dedup(edgemod._path_points(a, sa, c, sb, ed))
-        color = style.resolve_color(ed.get("color"), style.INK, ink=True)
-        lwk = ed.get("lw", "flow")
-        lw = style.STROKE.get(lwk) if isinstance(lwk, str) else float(lwk)
-        lw = lw or style.STROKE["flow"]
-        arrow = ed.get("arrow", "end")
-        d.polyline(pts, color, lw, bool(ed.get("dash")),
-                   arrow in ("end", "both"), arrow in ("start", "both"))
+    shape_heads = fig.pptx_heads == "shape"
+    for r in fig.routes:
+        ed, pts = r.spec, list(r.pts)
+        name = "Flow %s-%s" % (ed["from"], ed["to"])
+        head_end, head_start = r.arrow_end, r.arrow_start
+        extra = []
+        if shape_heads:
+            # identical heads in every application, drawn as triangles
+            hl, hw = style.arrow_geometry(r.lw, fig.arrow_app)
+            if head_end:
+                extra.append(_head_triangle(pts[-1], pts[-2], hl, hw))
+                pts[-1] = _shorten(pts[-1], pts[-2], hl * 0.8)
+            if head_start:
+                extra.append(_head_triangle(pts[0], pts[1], hl, hw))
+                pts[0] = _shorten(pts[0], pts[1], hl * 0.8)
+            head_end = head_start = False
+        tail_seg = None
+        if head_end and r.short_end:
+            # Too short a last run for WPS to aim the head: give the head a
+            # straight segment of its own and draw the bent body without it.
+            tail_seg = [pts[-2], pts[-1]]
+            head_end = False
+            d.split.append(name)
+        st = _end_glue(d, r.a, r.sa, pts[0])
+        en = _end_glue(d, r.b, r.sb, pts[-1]) if tail_seg is None else None
+        sid = None
+        if fig.pptx_connectors != "freeform":
+            sid = d.connector(pts, r.color, r.lw, r.dash, head_end, head_start, st, en,
+                              name, r.preset)
+        if sid is None:
+            d.polyline(pts, r.color, r.lw, bool(r.dash), head_end, head_start, name,
+                       r.preset)
+            if fig.pptx_connectors != "freeform":
+                d.freeform.append("%s -> %s (%d bends)" % (ed["from"], ed["to"], len(pts) - 2))
+        if tail_seg is not None:
+            d.connector(tail_seg, r.color, r.lw, r.dash, True, False, None,
+                        _end_glue(d, r.b, r.sb, tail_seg[-1]), name + " head", r.preset)
+        for tri in extra:
+            d.polygon(tri, r.color, "none", 0, None, None, None, True, "ArrowHead")
         if ed.get("label"):
-            mid = pts[len(pts) // 2]
-            size = float(ed.get("label_size", style.TYPE["caption"]["size"]))
+            x, y, anchor, size, tc = edgemod.label_box(ed, r.pts, r.color, fig.font)
             tw, th, _ = T.measure(ed["label"], size, fig.font)
-            d.textbox(mid[0] - tw / 2.0 - 1, mid[1] - th - 2.5, tw + 2, th + 2, ed["label"],
-                      {"font": "Times New Roman" if fig.font == "times" else "Arial",
-                       "size": size, "color": color}, "FlowLabel")
+            rot = ed.get("label_rotate", 0)
+            x0 = {"start": x, "end": x - tw}.get(anchor, x - tw / 2.0)
+            d.textbox(x0 - 1, y - th / 2.0 - 1, tw + 2, th + 2, ed["label"],
+                      {"font": _face(fig), "size": size, "color": tc,
+                       "align": {"start": "l", "end": "r"}.get(anchor, "ctr")}, "FlowLabel",
+                      rot if rot in (90, -90, 270) else 0)
+
+
+def _shorten(p, q, k):
+    L = math.hypot(p[0] - q[0], p[1] - q[1]) or 1.0
+    k = min(k, L * 0.9)
+    return (p[0] + (q[0] - p[0]) * k / L, p[1] + (q[1] - p[1]) * k / L)
+
+
+def _face(fig):
+    return "Times New Roman" if fig.font == "times" else "Arial"
+
+
+def _emit_legend(d, fig):
+    """The legend as one group, with one sub-group per entry."""
+    if not fig.spec.get("legend"):
+        return
+    lay = fig.legend_layout()
+    sw = lay["swatch"]
+    d.begin_group("Legend")
+    if lay["framed"]:
+        bx, by, bw, bh = lay["box"]
+        d.rect(bx, by, bw, bh, "#FFFFFF", style.FRAME_GREY, style.STROKE["hairline"],
+               None, None, None, True, "LegendFrame")
+    for ent, cx, cy, size, kind, col, tw in lay["rows"]:
+        d.begin_group("Legend: %s" % T.plain(ent.get("text", ""))[:40])
+        ymid = cy + size / 2.0
+        if kind in ("line", "arrow", "dashed"):
+            lw = style.stroke_width(ent.get("lw"), style.STROKE["flow"])
+            dash = kind == "dashed" or bool(ent.get("dash"))
+            arrow = ent.get("arrow", kind != "line")
+            d.connector([(cx, ymid), (cx + sw, ymid)], col, lw, dash, arrow, False,
+                        None, None, "LegendSwatch",
+                        style.pick_preset(lw, app=fig.arrow_app))
+        else:
+            d.rect(cx, cy + size * 0.1, sw, size * 0.8,
+                   style.resolve_color(ent.get("fill"), col), style.INK,
+                   style.STROKE["hairline"], None, None, None, True, "LegendSwatch")
+        _, th, _ = T.measure(ent.get("text", ""), size, fig.font)
+        d.textbox(cx + sw + 3.0, ymid - th / 2.0 - 1, tw + 3, th + 2, ent.get("text", ""),
+                  {"font": _face(fig), "size": size, "align": "l",
+                   "color": style.resolve_color(ent.get("text_color"), style.INK)},
+                  "LegendText")
+        d.end_group((cx, cy, sw + 3.0 + tw + 3, size + 2))
+    bx, by, bw, bh = lay["box"]
+    d.end_group((bx, by, bw, bh))
 
 
 def _emit_notes(d, fig):
@@ -443,10 +729,14 @@ def _emit_notes(d, fig):
             continue
         x += float(nt.get("dx", 0.0)); y += float(nt.get("dy", 0.0))
         tw, th, _ = T.measure(nt.get("text", ""), size, fig.font)
-        d.textbox(x - tw / 2.0 - 1, y - th / 2.0 - 1, tw + 3, th + 2, nt.get("text", ""),
+        anchor = nt.get("anchor", "middle")
+        x0 = {"start": x, "end": x - tw}.get(anchor, x - tw / 2.0)
+        d.textbox(x0 - 1, y - th / 2.0 - 1, tw + 3, th + 2, nt.get("text", ""),
                   {"font": "Times New Roman" if fig.font == "times" else "Arial",
                    "size": size, "italic": nt.get("italic", True),
-                   "color": style.resolve_color(nt.get("color"), style.INK, ink=True)}, "Note")
+                   "align": {"start": "l", "end": "r"}.get(anchor, "ctr"),
+                   "color": style.resolve_color(nt.get("color"), style.INK, ink=True)}, "Note",
+                  nt.get("rotate", 0) if nt.get("rotate", 0) in (90, -90, 270) else 0)
 
 
 # ------------------------------------------------------------------ package
@@ -492,7 +782,12 @@ LAYOUT_RELS = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
                '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="../slideMasters/slideMaster1.xml"/>'
                '</Relationships>')
 
-_EMPTY_TREE = ('<p:cSld><p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/>'
+# An explicit white background: Keynote otherwise renders a slide with no
+# <p:bg> on black.
+_BG = ('<p:bg><p:bgPr><a:solidFill><a:srgbClr val="FFFFFF"/></a:solidFill>'
+       '<a:effectLst/></p:bgPr></p:bg>')
+
+_EMPTY_TREE = ('<p:cSld>' + _BG + '<p:spTree><p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/>'
                '<p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/>'
                '<a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/>'
                '</a:xfrm></p:grpSpPr></p:spTree></p:cSld>')
@@ -554,14 +849,20 @@ def _theme():
 
 
 def write(fig, path):
+    with fig.scope():
+        return _write(fig, path)
+
+
+def _write(fig, path):
     d = Deck(fig)
     for it in fig.items:
         _emit_container(d, it, fig)
     _emit_edges(d, fig)
     _emit_notes(d, fig)
+    _emit_legend(d, fig)
 
     slide = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-             '<p:sld %s><p:cSld><p:spTree>'
+             '<p:sld %s><p:cSld>%s<p:spTree>'
              '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
              '<p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/>'
              '<a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>'
@@ -569,7 +870,7 @@ def write(fig, path):
              '<p:clrMapOvr><a:overrideClrMapping bg1="lt1" tx1="dk1" bg2="lt2" tx2="dk2"'
              ' accent1="accent1" accent2="accent2" accent3="accent3" accent4="accent4"'
              ' accent5="accent5" accent6="accent6" hlink="hlink" folHlink="folHlink"/>'
-             '</p:clrMapOvr></p:sld>' % (_PML, "".join(d.shapes)))
+             '</p:clrMapOvr></p:sld>' % (_PML, _BG, "".join(d.shapes)))
 
     pres = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
             '<p:presentation %s saveSubsetFonts="1">'
@@ -602,4 +903,6 @@ def write(fig, path):
             zf.writestr("ppt/media/" + name, blob)
     finally:
         zf.close()
-    return {"path": path, "shapes": len(d.shapes), "media": len(d.media)}
+    return {"path": path, "shapes": len(d.shapes), "media": len(d.media),
+            "connectors_glued": d.glued, "freeform_edges": d.freeform,
+            "split_heads": d.split}

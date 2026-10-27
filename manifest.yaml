@@ -1,5 +1,5 @@
 name: cvpr-figure
-version: 2.0.0
+version: 3.0.0
 description: >
   Declarative manifest for the static/dynamic split. SKILL.md and AGENTS.md use
   this to decide which fragments to load for a given figure request. The main
@@ -13,12 +13,16 @@ always_load:
 engine:
   entry: scripts/render.py
   auditor: scripts/validate.py
+  audit_pptx: scripts/audit_pptx.py     # after the hand-over: any PPTX
+  audit_pdf: scripts/audit_pdf.py       # the PDF LaTeX includes (needs PyMuPDF)
+  export_pptx: scripts/export_pptx.py   # lossless PPTX -> PDF, then audit_pdf
   from_code: scripts/from_code.py
   stencil: scripts/make_stencil.py
   package: scripts/cvprfig
   runtime: python>=3.8, standard library only
   optional:
     - PyYAML (a bundled parser covers the same subset when absent)
+    - PyMuPDF, for audit_pdf.py
     - Inkscape / LibreOffice / rsvg-convert / cairosvg / ImageMagick, for pdf, png, emf
 
 outputs:
@@ -86,6 +90,12 @@ references:
       path: references/corpus-report.md
     - condition: drafting a figure from a model implementation or an mmengine/mmdet config
       path: references/from-code.md
+    - condition: the figure shows symbols or maths; writing the symbol table or the caption; sharing notation across figures
+      path: references/symbols-and-captions.md
+    - condition: the user has hand-edited the PPTX, exported a PDF from it, or asks whether the shipped files are fine
+      path: references/after-handover.md
+    - condition: the user edits in WPS, Keynote, LibreOffice or PowerPoint, or an export looks different from the SVG
+      path: references/app-compatibility.md
 
 templates:
   - templates/teaser-comparison.yaml
@@ -109,6 +119,9 @@ templates:
 
 quality_gate:
   command: python3 scripts/validate.py <spec> --svg <rendered.svg>
+  after_handover:
+    - python3 scripts/audit_pptx.py <edited.pptx> --width <pt> --spec <spec>
+    - python3 scripts/export_pptx.py <edited.pptx> --width <pt>
   blocking: |
     Every FAIL must be fixed before delivery. Every WARN must be fixed or
     explicitly justified to the user. The auditor cannot judge whether the

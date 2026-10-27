@@ -114,7 +114,35 @@ def emit(g, venue="cvpr", width="double", stages=None, detail=True,
         if lab:
             e["label"] = lab
         spec["edges"].append(e)
+    _declare_operators(g, spec)
     return spec
+
+
+_OP_MEANING = {"+": ("\\oplus", "element-wise addition"),
+               "x": ("\\otimes", "element-wise product"),
+               "c": ("c", "channel concatenation")}
+
+
+def _declare_operators(g, spec):
+    """Every operator glyph the draft draws is a symbol a reader must be told
+    about: declare it, and start a caption that defines it, so the draft
+    passes the symbol check and the author only has to finish the sentence."""
+    ops = []
+    for n in g.nodes:
+        if n.kind == "op":
+            op = n.meta.get("op", "+")
+            if op not in ops:
+                ops.append(op)
+    if not ops:
+        return
+    sym, defs = {}, []
+    for op in ops:
+        key, meaning = _OP_MEANING.get(op, (op, "operator"))
+        sym[key] = {"meaning": meaning, "defined_in": "caption"}
+        glyph = "\\textcircled{c}" if op == "c" else "$%s$" % key.replace("\\\\", "\\")
+        defs.append("%s: %s" % (glyph, meaning))
+    spec["symbols"] = sym
+    spec["caption"] = ("TODO: the claim this figure makes. " + "; ".join(defs) + ".")
 
 
 

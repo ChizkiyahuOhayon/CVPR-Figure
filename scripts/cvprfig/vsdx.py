@@ -181,13 +181,27 @@ class _Builder(object):
         out.append('<Cell N="LeftMargin" V="0"/><Cell N="RightMargin" V="0"/>'
                    '<Cell N="TopMargin" V="0"/><Cell N="BottomMargin" V="0"/>')
         out.append('<Cell N="VerticalAlign" V="%d"/>' % ts.get("valign", 1))
-        out.append('<Section N="Character"><Row IX="0">'
-                   '<Cell N="Font" V="%s"/><Cell N="Color" V="%s"/>'
-                   '<Cell N="Size" V="%s"/><Cell N="Style" V="%d"/>'
-                   '<Cell N="Case" V="0"/><Cell N="Pos" V="0"/>'
-                   '</Row></Section>'
-                   % (ts.get("font", "Times New Roman"), ts.get("color", "#000000").lower(),
-                      n(ts.get("size", 7.0) / PT), ts.get("style", 0)))
+        # One Character row per distinct (bold, italic, script) style in the
+        # label, so inline markup and maths come through as formatting rather
+        # than as literal asterisks.  Pos: 0 normal, 1 super, 2 sub.
+        base_st = ts.get("style", 0)
+        runs = T.parse_runs(str(text), bool(base_st & 1), bool(base_st & 2)) if text else []
+        styles = []
+        for _, rb, ri, sc in runs:
+            key = ((1 if rb else 0) | (2 if ri else 0), {1: 1, -1: 2}.get(sc, 0))
+            if key not in styles:
+                styles.append(key)
+        if not styles:
+            styles = [(base_st, 0)]
+        out.append('<Section N="Character">')
+        for ix, (st, pos) in enumerate(styles):
+            out.append('<Row IX="%d"><Cell N="Font" V="%s"/><Cell N="Color" V="%s"/>'
+                       '<Cell N="Size" V="%s"/><Cell N="Style" V="%d"/>'
+                       '<Cell N="Case" V="0"/><Cell N="Pos" V="%d"/></Row>'
+                       % (ix, ts.get("font", "Times New Roman"),
+                          ts.get("color", "#000000").lower(),
+                          n(ts.get("size", 7.0) / PT), st, pos))
+        out.append('</Section>')
         out.append('<Section N="Paragraph"><Row IX="0">'
                    '<Cell N="HorzAlign" V="%d"/><Cell N="SpLine" V="-1.2"/>'
                    '</Row></Section>' % ts.get("halign", 1))
@@ -209,7 +223,15 @@ class _Builder(object):
         out.extend(geom_rows)
         out.append('</Section>')
         if text:
-            out.append('<Text>%s</Text>' % ESC(str(text)))
+            body = []
+            for chars, rb, ri, sc in runs:
+                key = ((1 if rb else 0) | (2 if ri else 0), {1: 1, -1: 2}.get(sc, 0))
+                # Run boundaries are positional (<cp/> marks), as Visio writes
+                # them.  LibreOffice's importer counts UTF-8 bytes when it turns
+                # these into run lengths, so after a non-ASCII glyph (an arrow,
+                # a Greek letter) its formatting lands late; Visio is unaffected.
+                body.append('<cp IX="%d"/>%s' % (styles.index(key), ESC(chars)))
+            out.append('<Text>%s</Text>' % "".join(body))
         out.append('</Shape>')
         return "".join(out)
 
@@ -223,7 +245,8 @@ def _tstyle(spec, fig, override=None):
     if spec.get("_italic"):
         st |= 2
     d = {"font": font, "size": spec.get("_tsize", 7.0), "style": st,
-         "color": style.resolve_color(spec.get("text_color"), style.INK, ink=True)}
+         "color": style.resolve_color(spec.get("text_color"), style.INK, ink=True),
+         "halign": {"start": 0, "left": 0, "end": 2, "right": 2}.get(spec.get("anchor"), 1)}
     rot = spec.get("rotate")
     if rot in (90, -90, 270):
         # Visio rotates the text block independently of the shape, so a tall
@@ -246,11 +269,7 @@ def _emit_node(b, it, fig):
     fill, stroke, tc = SH.node_colors(s)
     lw = style.stroke_width(s.get("lw"), style.STROKE["box"])
     dash = _dash_code(s.get("dash"))
-    x, y, w, h = it.x, it.y, it.w, it.h
-    cap_h = 0.0
-    if s.get("caption"):
-        cap_h = s["_cap_h"] + float(s.get("caption_gap", 3.0))
-        h -= cap_h
+    x, y, w, h = it.body()
     ts = _tstyle(s, fig)
     label = s.get("text") or None
 
@@ -326,7 +345,7 @@ def _emit_node(b, it, fig):
     elif shape in ("image", "photo", "imagestack"):
         b.rect(x, y, w, h, "#f2f2f2", style.FRAME_GREY, style.STROKE["hairline"],
                "ImageSlot", 0.0, 2, s.get("text") or s.get("src") or "image",
-               _tstyle(s, fig, {"size": 6.0, "color": style.MUTED_INK}))
+               _tstyle(s, fig, {"size": style.TYPE["caption"]["size"], "color": style.MUTED_INK}))
         if s.get("src"):
             b.placeholders.append(s["src"])
     elif shape in ("text", "note", "mathlabel"):
@@ -342,7 +361,7 @@ def _emit_node(b, it, fig):
         b.rect(x, y, w, h, fill, stroke, lw, "Module", style.GEOM["corner"], dash, label, ts)
 
     if s.get("caption"):
-        b.textbox(x, y + h + float(s.get("caption_gap", 3.0)), w, s["_cap_h"],
+        b.textbox(it.x, y + h + float(s.get("caption_gap", 3.0)), it.w, s["_cap_h"],
                   s["caption"], _tstyle(s, fig, {"size": s["_cap_size"], "style": 0}), "Caption")
     if s.get("badge"):
         bs = float(s.get("badge_size", style.TYPE["annot"]["size"]))
@@ -479,28 +498,17 @@ def _emit_container(b, it, fig):
 
 
 def _emit_edges(b, fig):
-    for e in (fig.spec.get("edges") or []):
-        a, sa = edgemod.resolve_ref(e["from"], fig.nodes)
-        c, sb = edgemod.resolve_ref(e["to"], fig.nodes)
-        if sa is None or sb is None:
-            da, db = edgemod.auto_sides(a, c)
-            sa = sa or da
-            sb = sb or db
-        pts = edgemod._dedup(edgemod._path_points(a, sa, c, sb, e))
-        color = style.resolve_color(e.get("color"), style.INK, ink=True)
-        lwk = e.get("lw", "flow")
-        lw = style.STROKE.get(lwk) if isinstance(lwk, str) else float(lwk)
-        lw = lw if lw else style.STROKE["flow"]
-        arrow = e.get("arrow", "end")
-        b.polyline(pts, color, lw, 2 if e.get("dash") else None,
-                   arrow in ("end", "both"), arrow in ("start", "both"), "Flow")
+    for r in fig.routes:
+        e = r.spec
+        b.polyline(r.pts, r.color, r.lw, 2 if r.dash else None,
+                   r.arrow_end, r.arrow_start, "Flow")
         if e.get("label"):
-            mid = pts[len(pts) // 2]
-            size = float(e.get("label_size", style.TYPE["caption"]["size"]))
+            x, y, anchor, size, tc = edgemod.label_box(e, r.pts, r.color, fig.font)
             tw, th, _ = T.measure(e["label"], size, fig.font)
-            b.textbox(mid[0] - tw / 2.0, mid[1] - th - 2.0, tw + 2, th + 2, e["label"],
+            x0 = {"start": x, "end": x - tw}.get(anchor, x - tw / 2.0)
+            b.textbox(x0 - 1, y - th / 2.0 - 1, tw + 2, th + 2, e["label"],
                       {"font": "Times New Roman" if fig.font == "times" else "Arial",
-                       "size": size, "style": 0, "color": color, "halign": 1}, "FlowLabel")
+                       "size": size, "style": 0, "color": tc, "halign": 1}, "FlowLabel")
 
 
 def _emit_notes(b, fig):
@@ -517,11 +525,13 @@ def _emit_notes(b, fig):
             continue
         x += float(nt.get("dx", 0.0)); y += float(nt.get("dy", 0.0))
         tw, th, _ = T.measure(nt.get("text", ""), size, fig.font)
-        b.textbox(x - tw / 2.0, y - th / 2.0, tw + 2, th + 2, nt.get("text", ""),
+        anchor = nt.get("anchor", "middle")
+        x0 = {"start": x, "end": x - tw}.get(anchor, x - tw / 2.0)
+        b.textbox(x0, y - th / 2.0, tw + 2, th + 2, nt.get("text", ""),
                   {"font": "Times New Roman" if fig.font == "times" else "Arial",
                    "size": size, "style": 2 if nt.get("italic", True) else 0,
                    "color": style.resolve_color(nt.get("color"), style.INK, ink=True),
-                   "halign": 1}, "Note")
+                   "halign": {"start": 0, "end": 2}.get(anchor, 1)}, "Note")
 
 
 # ------------------------------------------------------------------ package
@@ -623,13 +633,47 @@ def _pages_xml(page_w, page_h):
 </Pages>""" % (NS, RNS, n(page_w / 2), n(page_h / 2), n(page_w), n(page_h)))
 
 
+def _emit_legend(b, fig):
+    if not fig.spec.get("legend"):
+        return
+    lay = fig.legend_layout()
+    sw = lay["swatch"]
+    face = "Times New Roman" if fig.font == "times" else "Arial"
+    if lay["framed"]:
+        bx, by, bw, bh = lay["box"]
+        b.rect(bx, by, bw, bh, "#FFFFFF", style.FRAME_GREY, style.STROKE["hairline"],
+               "LegendFrame", 2.0)
+    for ent, cx, cy, size, kind, col, tw in lay["rows"]:
+        ymid = cy + size / 2.0
+        if kind in ("line", "arrow", "dashed"):
+            lw = style.stroke_width(ent.get("lw"), style.STROKE["flow"])
+            dash = 2 if (kind == "dashed" or ent.get("dash")) else None
+            b.polyline([(cx, ymid), (cx + sw, ymid)], col, lw, dash,
+                       ent.get("arrow", kind != "line"), False, "LegendSwatch")
+        else:
+            b.rect(cx, cy + size * 0.1, sw, size * 0.8,
+                   style.resolve_color(ent.get("fill"), col), style.INK,
+                   style.STROKE["hairline"], "LegendSwatch")
+        _, th, _ = T.measure(ent.get("text", ""), size, fig.font)
+        b.textbox(cx + sw + 3.0, ymid - th / 2.0 - 1, tw + 3, th + 2, ent.get("text", ""),
+                  {"font": face, "size": size, "style": 0,
+                   "color": style.resolve_color(ent.get("text_color"), style.INK),
+                   "halign": 0}, "LegendText")
+
+
 def write(fig, path):
     """Write ``fig`` to a native Visio drawing at ``path``."""
+    with fig.scope():
+        return _write(fig, path)
+
+
+def _write(fig, path):
     b = _Builder(fig)
     for it in fig.items:
         _emit_container(b, it, fig)
     _emit_edges(b, fig)
     _emit_notes(b, fig)
+    _emit_legend(b, fig)
 
     page = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n'
             '<PageContents xmlns="%s" xmlns:r="%s" xml:space="preserve"><Shapes>%s</Shapes>'

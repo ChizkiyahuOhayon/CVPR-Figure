@@ -118,8 +118,33 @@ Median **6.0 pt**, quartiles 4.5 and 7.5. The median *smallest* glyph in a
 figure is **5.4 pt**.
 
 So published practice runs a body tier near 6.5–7 pt with annotation dipping
-to 5. `MIN_RENDERED_PT = 5.0` (the 29th percentile — below it you are in the
-tail that draws reviewer complaints) and `WARN_RENDERED_PT = 5.6`.
+to 5. v2.0 set `MIN_RENDERED_PT = 5.0` (the 29th percentile) and
+`WARN_RENDERED_PT = 5.6`.
+
+**v3 recalibration.** Matching the corpus distribution turned out to be the
+wrong target: figures built at 7.0 pt body printed at 5.8–7.3 pt and readers
+found them small. The corpus median describes what gets published, not what
+reads well. v3 re-measured the figures users actually hold up as the model —
+the template papers of a driving-occupancy project — the same way (glyph size
+in the figure PDF × the `\includegraphics` scale):
+
+| Paper | Figure | Tool | p10 | median | p90 |
+|---|---|---|---|---|---|
+| SparseWorld | overview | Visio | 6.4 | 7.5 | 7.5 |
+| SparseWorld | comparison | Visio | 6.1 | 6.6 | 7.5 |
+| SparseWorld | visualisation | PowerPoint | 6.4 | 7.4 | 9.2 |
+| Occ3D | data pipeline | PowerPoint | 4.9 | 8.2 | 8.2 |
+| Occ3D | model | PowerPoint | 4.9 | 5.7 | 6.5 |
+| BEVDepth | backbone | Keynote | 8.6 | 8.6 | 8.6 |
+| BEVDepth | unprojection | Keynote | 6.6 | 6.6 | 6.6 |
+| OccFusion | teaser | PowerPoint | 6.4 | 6.4 | 8.2 |
+| BEVerse | framework | draw.io | 5.3 | 5.3 | 5.9 |
+
+The diagrams users like sit at a 7.5 pt median. v3 therefore sets the body
+tier at **7.5 pt**, stage titles at 8.5 pt, `MIN_RENDERED_PT = 6.0`,
+`WARN_RENDERED_PT = 6.5`, and module names at no less than 7.0 pt. The
+Supervisor-Skills figure checklist (HKUST) asks for 8 pt after scaling; the
+stage titles meet it and module names approach it.
 
 Rendered stroke widths, same scaling applied: modes at **0.19 pt** (13%),
 **0.36 pt** (24%), **0.45 pt** (8%) and **0.80 pt** (5%). v1 of this project

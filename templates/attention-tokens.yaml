@@ -9,7 +9,7 @@ figure:
   font: helvetica
 
 layout: row
-gap: 12
+gap: 8
 
 panels:
   - id: p_in
@@ -17,11 +17,11 @@ panels:
     frame: none
     valign: top
     body:
-      - {id: f2, shape: image, w: 54, h: 34, caption: "Frame T-2", caption_size: 6.2}
+      - {id: f2, shape: image, w: 54, h: 34, caption: "Frame $T-2$"}
       - {id: sp1, shape: spacer, h: 8, w: 4}
-      - {id: f1, shape: image, w: 54, h: 34, caption: "Frame T-1", caption_size: 6.2}
+      - {id: f1, shape: image, w: 54, h: 34, caption: "Frame $T-1$"}
       - {id: sp2, shape: spacer, h: 8, w: 4}
-      - {id: f0, shape: image, w: 54, h: 34, caption: "Frame T", caption_size: 6.2}
+      - {id: f0, shape: image, w: 54, h: 34, caption: "Frame $T$"}
       - {id: dots, shape: ellipsis, dir: down, w: 8, h: 12}
 
   - id: p_enc
@@ -40,7 +40,7 @@ panels:
     title_color: "#C00000"
     title_italic: false
     frame: dashed
-    badge: "×L"
+    badge: "$\\times L$"
     valign: top
     body:
       - row:
@@ -56,7 +56,7 @@ panels:
                   - {id: t1a, shape: tokengrid, rows: 4, cols: 1, cell: 8, role: aux,
                      colors: [gold.soft, orange.soft, orange.soft, orange.soft]}
                   - {id: t0a, shape: tokengrid, rows: 4, cols: 1, cell: 8, role: aux,
-                     colors: [gold.soft, purple.soft, purple.soft, purple.soft]}
+                     colors: [gold.soft, blue.soft, blue.soft, blue.soft]}
             - {id: sa, text: "Spatial Attention", role: encoder, tint: pale, rotate: 90,
                w: 17, h: 128, outline: none}
             - id: c_mid
@@ -68,7 +68,7 @@ panels:
                   - {id: t1b, shape: tokengrid, rows: 4, cols: 1, cell: 8, role: aux,
                      colors: [gold.soft, orange.soft, orange.soft, orange.soft]}
                   - {id: t0b, shape: tokengrid, rows: 4, cols: 1, cell: 8, role: aux,
-                     colors: [gold.soft, purple.soft, purple.soft, purple.soft]}
+                     colors: [gold.soft, blue.soft, blue.soft, blue.soft]}
             - {id: ta, text: "Temporal Causal\nAttention", role: core, tint: pale,
                rotate: 90, w: 17, h: 128, outline: none}
             - id: c_right
@@ -80,7 +80,7 @@ panels:
                   - {id: t1c, shape: tokengrid, rows: 4, cols: 1, cell: 8, role: aux,
                      colors: [gold.soft, orange.soft, orange.soft, orange.soft]}
                   - {id: t0c, shape: tokengrid, rows: 4, cols: 1, cell: 8, role: aux,
-                     colors: [gold.soft, purple.soft, purple.soft, purple.soft]}
+                     colors: [gold.soft, blue.soft, blue.soft, blue.soft]}
 
   - id: p_head
     frame: none
@@ -97,9 +97,9 @@ panels:
     frame: none
     valign: top
     body:
-      - {id: o_pc, shape: image, w: 128, h: 74, caption: "Point Map & Pose", caption_size: 6.2}
+      - {id: o_pc, shape: image, w: 102, h: 60, caption: "Point Map & Pose"}
       - {id: sp7, shape: spacer, h: 10, w: 4}
-      - {id: o_d,  shape: image, w: 128, h: 42, caption: "Depth Map", caption_size: 6.2}
+      - {id: o_d,  shape: image, w: 102, h: 36, caption: "Depth Map"}
 
 edges:
   - {from: f2, to: e2, color: steel, lw: box}
@@ -108,12 +108,22 @@ edges:
   - {from: e2, to: t2a, color: steel, lw: box}
   - {from: e1, to: t1a, color: steel, lw: box}
   - {from: e0, to: t0a, color: steel, lw: box}
-  - {from: t2c, to: h_cam, color: grey, lw: box}
-  - {from: t1c, to: h_pt,  color: grey, lw: box}
-  - {from: t0c, to: h_dep, color: grey, lw: box}
-  - {from: h_cam, to: o_pc.w, color: grey, lw: box, route: vh}
-  - {from: h_pt,  to: o_pc.w, color: grey, lw: box, route: vh}
-  - {from: h_dep, to: o_d.w,  color: grey, lw: box, route: vh}
+  - {from: t2c, to: h_cam, lw: box}
+  - {from: t1c, to: h_pt, lw: box}
+  - {from: t0c, to: h_dep, lw: box}
+  - {from: h_cam, to: o_pc.w, lw: box}
+  - {from: h_pt,  to: o_pc.w, lw: box}
+  - {from: h_dep, to: o_d.w, lw: box}
 
 notes:
-  - {text: "Camera Token", near: t2a.n, dy: -8.5, dx: -3, size: 5.6, color: orange, italic: false}
+  - {text: "camera token", near: t2a.n, dy: -12, dx: 4, color: gold, italic: false}
+
+symbols:
+  "T": {meaning: "index of the current frame", defined_in: caption}
+  "L": {meaning: "number of decoder layers", defined_in: caption}
+
+caption: >-
+  \textbf{One causal decoder serves every frame of the stream.} Tokens of
+  frames $T-2$ to $T$ (one colour per frame, a camera token on top) pass
+  $L$ times through spatial attention within a frame and causal attention
+  across frames, and three heads read camera pose, points and depth.

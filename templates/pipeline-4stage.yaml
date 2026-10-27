@@ -8,11 +8,12 @@ figure:
   font: times
 
 layout: row
-gap: 9
+gap: 7
 
 panels:
   # ------------------------------------------------ stage 1: inputs
   - id: s_backbone
+    gap: 3            # spacers below set the rhythm
     title: "Image Backbone"
     frame: dashed
     valign: top
@@ -20,16 +21,17 @@ panels:
       - row:
           gap: 6
           body:
-            - {id: traj, shape: image, w: 44, h: 29, caption: "Historical\nTrajectories"}
+            - {id: traj, shape: image, w: 40, h: 27, caption: "Historical\nTrajectories"}
             - {id: plus0, shape: text, text: "+", size: 11}
-            - {id: lq, shape: image, w: 44, h: 29, caption: "Learnable\nQueries"}
+            - {id: lq, shape: image, w: 40, h: 27, caption: "Learnable\nQueries"}
       - {id: gap1, shape: spacer, h: 6, w: 4}
-      - {id: vox, shape: plane, w: 70, h: 26, role: neutral, skew: 0.30}
+      - {id: vox, shape: plane, w: 70, h: 26, role: neutral, skew: 0.30, dx: 10.5}
       - {id: gap2, shape: spacer, h: 8, w: 4}
-      - {id: cams, shape: image, w: 96, h: 63, caption: "Surround-view Cameras"}
+      - {id: cams, shape: image, w: 86, h: 56, caption: "Surround-view Cameras"}
 
   # ------------------------------ stage 2: the paper's core contribution
   - id: s_perc
+    gap: 3            # spacers below set the rhythm
     title: "Range-Adaptive Perception"
     frame: dashed
     valign: top
@@ -41,70 +43,71 @@ panels:
           body:
             - {id: qbank, shape: slab, n: 6, cell: 6, cellh: 22, role: neutral, fill: "#FFFFFF"}
             - {id: plus1, shape: circleop, op: "+", d: 10}
-            - {id: lidar, shape: image, w: 52, h: 26}
-      - {id: gapB, shape: spacer, h: 4, w: 4}
+            - {id: lidar, shape: image, w: 44, h: 24}
+      - {id: gapB, shape: spacer, h: 7, w: 4}
       - group:
           id: block
-          fill: gold.pale
+          fill: orange.pale
           frame: region
-          frame_color: gold.deep
-          badge: "×L"
+          frame_color: orange.deep
+          badge: "$\\times L$"
           gap: 5
           pad: 7
           body:
-            - {id: fs,   text: "Feature Sampling",        role: core, tint: mid,  outline: match}
-            - {id: am,   text: "Adaptive Mixing",         role: core, tint: light, outline: match}
-            - {id: mhsa, text: "Temporal-Spatial MHSA",   role: core, tint: mid,  outline: match}
-            - {id: an1,  text: "Add & Norm",              role: core, tint: light, outline: match}
-            - {id: ffn,  text: "Feed Forward Network",    role: core, tint: light, outline: match}
-            - {id: an2,  text: "Add & Norm",              role: core, tint: light, outline: match}
+            - {id: fs,   text: "Feature Sampling",        role: core, tint: soft, padx: 5}
+            - {id: am,   text: "Adaptive Mixing",         role: core, tint: light, padx: 5}
+            - {id: mhsa, text: "Temporal-Spatial MHSA",   role: core, tint: soft, padx: 5}
+            - {id: an1,  text: "Add & Norm",              role: core, tint: light, padx: 5}
+            - {id: ffn,  text: "Feed-Forward Network",    role: core, tint: light, padx: 5}
+            - {id: an2,  text: "Add & Norm",              role: core, tint: light, padx: 5}
       - {id: gapC, shape: spacer, h: 6, w: 4}
-      - {id: occ1, shape: image, w: 98, h: 42}
+      - {id: occ1, shape: image, w: 88, h: 38}
 
   # ------------------------------------------- stage 3: temporal rollout
   - id: s_fc
+    gap: 3            # spacers below set the rhythm
     title: "State-Conditioned Forecasting"
     frame: dashed
     valign: top
-    fill: orange.pale
+    fill: gold.pale
     frame_color: "#A5A5A5"
     body:
       - group:
           id: updated
           frame: region
-          frame_color: orange.strong
-          badge: "×f"
-          gap: 6
-          pad: 6
+          frame_color: core
+          badge: "$\\times f$"
+          gap: 5
+          pad: 5
           arrange: row
           row:
-            - {id: uq, shape: slab, n: 5, cell: 6, cellh: 24, role: attention}
+            - {id: uq, shape: slab, n: 4, cell: 6, cellh: 22, role: attention}
             - {id: plus2, shape: text, text: "+", size: 11}
-            - {id: upos, shape: image, w: 38, h: 24}
+            - {id: upos, shape: image, w: 32, h: 22}
           title: "Updated Queries & Positions"
-          title_pos: below
-          title_size: 6.6
+          title_pos: above
+          title_size: 7.0
           title_bold: false
           title_italic: false
-      - {id: gapD, shape: spacer, h: 9, w: 4}
-      - {id: refine, text: "Refinement", role: temporal, tint: soft, outline: match}
-      - {id: gapE, shape: spacer, h: 7, w: 4}
+      - {id: gapD, shape: spacer, h: 7, w: 4}
+      - {id: refine, text: "Refinement", role: temporal, tint: soft}
+      - {id: gapE, shape: spacer, h: 5, w: 4}
       - {id: sum1, shape: circleop, op: "+", d: 11}
       - {id: gapF, shape: spacer, h: 5, w: 4}
       - row:
           gap: 10
           body:
             - {id: pe, shape: trapezoid, text: "PE", role: temporal, tint: soft, dir: up, w: 30, h: 15}
-            - {id: qt, shape: slab, n: 4, cell: 5, cellh: 20, role: neutral, fill: "#FFFFFF", badge: "×N"}
-      - {id: gapG, shape: spacer, h: 5, w: 4}
+            - {id: qt, shape: slab, n: 4, cell: 5, cellh: 20, role: neutral, fill: "#FFFFFF", badge: "$\\times N$"}
+      - {id: gapG, shape: spacer, h: 4, w: 4}
       - row:
           gap: 8
           body:
             - {id: qhat, shape: slab, n: 5, cell: 7, cellh: 24, role: attention}
             - {id: qego, shape: slab, n: 1, cell: 11, cellh: 26, role: decoder}
-      - {id: gapH, shape: spacer, h: 6, w: 4}
-      - {id: sca, text: "Spatial Cross-Attention", role: attention, tint: mid, outline: match}
-      - {id: gapI, shape: spacer, h: 6, w: 4}
+      - {id: gapH, shape: spacer, h: 5, w: 4}
+      - {id: sca, text: "Spatial Cross-Attention", role: attention, tint: mid}
+      - {id: gapI, shape: spacer, h: 5, w: 4}
       - row:
           gap: 8
           body:
@@ -113,33 +116,34 @@ panels:
 
   # ------------------------------------------------ stage 4: two heads
   - id: s_dec
+    gap: 3            # spacers below set the rhythm
     title: "Parallel Decoders"
     frame: dashed
     valign: top
     body:
       - {id: occdec, text: "Occupancy Decoding", role: decoder, tint: light}
       - {id: gapJ, shape: spacer, h: 8, w: 4}
-      - {id: occout, shape: image, w: 94, h: 46, badge: "×f"}
-      - {id: gapK, shape: spacer, h: 14, w: 4}
+      - {id: occout, shape: image, w: 86, h: 42, badge: "$\\times f$"}
+      - {id: gapK, shape: spacer, h: 10, w: 4}
       - {id: plandec, text: "Planning Decoding", role: decoder, tint: light}
       - {id: gapL, shape: spacer, h: 8, w: 4}
-      - {id: planout, shape: image, w: 94, h: 46, badge: "×f"}
+      - {id: planout, shape: image, w: 86, h: 42, badge: "$\\times f$"}
 
 edges:
   - {from: cams, to: vox, route: straight, lw: flow}
   - {from: vox.e, to: fs.w, route: hv, lw: flow}
   - {from: lq.e, to: scale.w, route: hv, lw: flow}
   - {from: scale, to: qbank.n, route: vh, lw: flow, arrow: none}
-  - {from: qbank.s, to: block.n, color: gold.deep, mid: 0.5}
-  - {from: fs, to: am, color: gold.deep, lw: box}
-  - {from: am, to: mhsa, color: gold.deep, lw: box}
-  - {from: mhsa, to: an1, color: gold.deep, lw: box}
-  - {from: an1, to: ffn, color: gold.deep, lw: box}
-  - {from: ffn, to: an2, color: gold.deep, lw: box}
-  - {from: mhsa.e, to: an1.e, route: bus, bend: 9, color: gold.deep, lw: box}
-  - {from: ffn.e, to: an2.e, route: bus, bend: 9, color: gold.deep, lw: box}
-  - {from: block.s, to: occ1.n, color: gold.deep}
-  - {from: occ1.e, to: q0.w, route: hv, color: gold.deep}
+  - {from: qbank.s, to: block.n, color: core, mid: 0.5}
+  - {from: fs, to: am, color: core, lw: box}
+  - {from: am, to: mhsa, color: core, lw: box}
+  - {from: mhsa, to: an1, color: core, lw: box}
+  - {from: an1, to: ffn, color: core, lw: box}
+  - {from: ffn, to: an2, color: core, lw: box}
+  - {from: mhsa.e, to: an1.e, route: bus, bend: 9, color: core, lw: box}
+  - {from: ffn.e, to: an2.e, route: bus, bend: 9, color: core, lw: box}
+  - {from: block.s, to: occ1.n, color: core}
+  - {from: occ1.e, to: q0.w, route: hv}
   - {from: q0.n, to: sca.s, color: temporal}
   - {from: sca.n, to: qhat.s, color: temporal}
   - {from: qhat.n, to: pe.s, color: temporal}
@@ -152,3 +156,22 @@ edges:
   - {from: qego.e, to: plandec.w, color: temporal}
   - {from: occdec.s, to: occout.n, lw: flow}
   - {from: plandec.s, to: planout.n, lw: flow}
+
+legend:
+  corner: sw
+  dir: row
+  items:
+    - {text: "ego-query update", color: temporal, kind: dashed}
+
+symbols:
+  "\\oplus": {meaning: "element-wise addition", defined_in: caption}
+  "L":       {meaning: "number of refinement layers", defined_in: caption}
+  "f":       {meaning: "number of future frames", defined_in: caption}
+  "N":       {meaning: "number of rollout steps per frame", defined_in: caption}
+
+caption: >-
+  \textbf{Sparse queries perceive once and forecast many times.}
+  Image features are sampled by queries refined over $L$ range-adaptive
+  layers (orange); a state-conditioned forecaster rolls them forward $f$
+  steps, $N$ updates each (yellow), and two decoders read occupancy and
+  the plan from every step. $\oplus$: element-wise addition.

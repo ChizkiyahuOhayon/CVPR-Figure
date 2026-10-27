@@ -30,21 +30,21 @@ panels:
   - id: s_core
     title: "Our Contribution"
     frame: dashed
-    fill: gold.pale
+    fill: orange.pale
     valign: middle
     body:
       - {id: q, shape: slab, n: 5, cell: 8, cellh: 26, role: attention,
-         caption: "*N* queries"}
+         caption: "$N$ queries"}
       - {id: sp, shape: spacer, h: 6, w: 4}
       - group:
           id: blk
           frame: region
-          frame_color: gold.deep
-          badge: "×L"
+          frame_color: orange.deep
+          badge: "$\\times L$"
           gap: 5
           body:
-            - {id: b1, text: "Cross-Attention", role: core, outline: match}
-            - {id: b2, text: "Feed Forward", role: core, tint: light, outline: match}
+            - {id: b1, text: "Cross-Attention", role: core}
+            - {id: b2, text: "Feed Forward", role: core, tint: light}
       - {id: sp2, shape: spacer, h: 6, w: 4}
       - {id: sum, shape: circleop, op: "+", d: 12}
 
@@ -63,13 +63,25 @@ panels:
 edges:
   - {from: img, to: enc}
   - {from: enc, to: q}
-  - {from: q, to: blk, color: gold.deep}
-  - {from: b1, to: b2, color: gold.deep, lw: box}
-  - {from: blk, to: sum, color: gold.deep}
+  - {from: q, to: blk, color: orange.deep}
+  - {from: b1, to: b2, color: orange.deep, lw: box}
+  - {from: blk, to: sum, color: orange.deep}
   # the skip connection leaves on the left so it never shares a port with
   # the block's own output on the right
   - {from: q.w, to: sum.w, route: bus, bend: 10, dash: true, lw: box,
-     color: gold.deep, label: "residual", label_size: 5.8, label_pos: 0.5,
+     color: orange.deep, label: "residual", label_pos: 0.5, label_rotate: -90,
      label_dx: -3, label_anchor: end}
   - {from: sum, to: head}
   - {from: head, to: out}
+
+# Every symbol the figure prints, what it means, and where a reader who
+# looks only at the figure and its caption finds it (validate.py checks this).
+symbols:
+  "N":       {meaning: "number of queries", defined_in: figure}
+  "L":       {meaning: "number of decoder layers", defined_in: caption}
+  "\\oplus": {meaning: "element-wise addition", defined_in: caption}
+
+caption: >-
+  \textbf{Learnable queries read the image once per layer.} $N$ queries
+  cross-attend to backbone features in each of $L$ layers and are added
+  back ($\oplus$) before the decoder turns them into the result.

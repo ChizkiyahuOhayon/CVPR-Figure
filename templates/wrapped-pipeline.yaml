@@ -40,7 +40,7 @@ panels:
           gap: 11
           align: center
           body:
-            - {id: d, shape: box, text: "Our Block", role: core, badge: "\u00d7N"}
+            - {id: d, shape: box, text: "Our Block", role: core, badge: "$\\times N$"}
             - {id: e, shape: box, text: "Refine", role: core}
             - {id: f, shape: invtrapezoid, text: "Head", role: decoder}
             - {id: y, shape: image, w: 40, caption: "prediction", src: null}
@@ -53,3 +53,10 @@ edges:
   - {from: d.e, to: e.w}
   - {from: e.e, to: f.w}
   - {from: f.e, to: y.w}
+
+symbols:
+  "N": {meaning: "number of stacked blocks", defined_in: caption}
+
+caption: >-
+  \textbf{A pipeline too long for one row wraps once.} The first row prepares
+  tokens; the second applies our block $N$ times, refines and decodes.

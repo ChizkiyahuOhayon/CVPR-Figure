@@ -1,5 +1,136 @@
 # Changelog
 
+## 3.0.0
+
+Everything in this release comes from using 2.0 on a real CVPR submission.
+The figure left the engine clean; the defects appeared afterwards, in the PPTX
+a person edited in WPS and in the PDF exported from it. So the audit now
+follows the files that ship, every symbol must be defined, type is larger, and
+the PPTX writer was rebuilt to survive hand editing.
+
+### Added — auditing what ships
+
+- `scripts/audit_pptx.py` — audits any PPTX (this engine's, FigGenie's, or a
+  hand-drawn one) at its printed width: `short-final-segment` (bent arrows WPS
+  draws at 45°), `unglued-arrow`, `freeform-arrow`, `glue-broken`,
+  `text-too-small`, `lost-subscript` (against `--spec` or a source `--ref`
+  SVG, or heuristically: `z1:4`, `d1`), `legend-orphan`, `image-low-ppi`,
+  `raster-effect`, `no-background`, `off-slide`, `mixed-fonts`, and the
+  arrowhead size each application will draw. On the hand-edited overview of
+  a real submission it reports exactly the 2 short final runs, 20 flattened
+  subscripts and 1 orphaned legend entry that had reached the paper.
+- `scripts/audit_pdf.py` — the PDF LaTeX includes: glyph sizes at the printed
+  width, image ppi and JPEG/JPX encoding, unembedded and Type 3 fonts, pages
+  that are one raster. Needs PyMuPDF.
+- `scripts/export_pptx.py` — lossless PPTX → PDF through LibreOffice (no
+  downsampling, lossless compression, quality 100) or Keynote (Best), followed
+  by `audit_pdf`.
+- `cvprfig/ooxml.py` — reads a PPTX back: absolute line paths through group
+  transforms, flips and rotation; arrowheads; text runs with sizes and
+  baselines; pictures with pixel and printed size; glue; effects.
+- Rule, in `SKILL.md`, `stance.md` and `after-handover.md`: once the PPTX is
+  edited it is the only source — export from it, never re-render over it.
+
+### Added — symbols and captions
+
+- `$...$` maths in every label: italic variables, upright digits and
+  operators, TeX spacing around binary operators and relations, accents,
+  `\mathrm`/`\mathbf`/`\mathbb`, Greek, primes, `\log`-style names; `\$` for
+  a literal dollar.
+- `symbols:` table and `caption:` / `caption_tex: file.tex#label`; checks
+  `undefined-symbol`, `symbol-not-in-caption`, `symbol-label-bare`,
+  `symbol-defined-elsewhere`, `upright-variable`, `symbol-style`,
+  `unused-symbol`, `caption-long`. Operators (⊕ ⊗ ⓒ), stacking brackets and
+  repeat badges (`×L`) count as symbols.
+- `paper:` — one `paper.yaml` per paper holding venue, font, role colours and
+  the symbol table.
+- `contract.md` item 7, the symbol table; caption template gains a fourth
+  sentence (define every symbol, in reading order) and a note to recompile and
+  check the page count.
+- `from_code.py` drafts declare the operators they draw and start a caption
+  that defines them.
+
+### Added — routing and the PPTX writer
+
+- Glued connectors: `straightConnector1` / `bentConnector2` /
+  `bentConnector3` with `stCxn`/`endCxn`, solved for rotation and flips; custom
+  polygons carry connection sites where the arrows meet their outline.
+  LibreOffice re-opens every template's PPTX with all 159 arrows where the
+  engine put them (`tests/compat/lo_roundtrip.py`). Routes with three or more
+  bends stay freeform and are listed.
+- The run after the last bend is at least 2.5 arrowheads; when the geometry
+  cannot allow it the auditor says so and the PPTX gives the head its own
+  straight segment.
+- Lanes: dog-legs that would jog on top of each other are spread 4 pt apart;
+  edges sharing a port share one trunk; stage gaps widen until their wires fit
+  (`corridor-too-narrow`, `edges-share-corridor`).
+- Arrowhead presets chosen for the application that exports the PDF
+  (`pptx_app: office | wps | keynote`) and drawn identically in the SVG;
+  `pptx_heads: shape` for identical triangles everywhere;
+  `pptx_connectors: freeform` for Keynote.
+- The legend is emitted to PPTX and VSDX at all (it was missing), as one group
+  with a sub-group per entry; legend items honour `dash:` and `arrow:`.
+- Explicit white slide background (Keynote rendered our slides black).
+- Script runs written 15 % larger to offset the applications' own reduction;
+  whole-point type for `pptx_app: keynote`; slack on text boxes.
+- `type_scale`, `align_x` / `align_y`, `label_rotate`, `fixed_gaps`.
+
+### Added — auditor
+
+`edge-crosses-text`, `diagonal-edge`, `label-overlap`, `text-off-canvas`,
+`edge-off-canvas`, `legend-unused-entry`, `unexplained-line-style`,
+`legend-overlap`, `ai-palette` (Tailwind / Material / Bootstrap stock
+colours), `saturated-fill`, `tinted-outlines`, `arrow-rainbow`,
+`image-low-ppi` / `image-soft` / `missing-image`, `module-label-small`,
+`script-too-small`; legibility now covers every text element, not only module
+labels.
+
+### Changed — recalibrations
+
+- **Type.** Body 7.0 → 7.5 pt, stage titles 7.8 → 8.5, captions 6.5 → 7.0,
+  annotations 6.0 → 6.5. Floor 5.0 → 6.0 pt, warning 5.6 → 6.5 pt, module names
+  ≥ 7.0 pt — measured on the template papers users hold up as the model
+  (SparseWorld 7.5 pt median, Occ3D 8.2, BEVDepth 8.6); see
+  `corpus-report.md`.
+- **Roles.** `core`/`ours` gold → orange, `decoder` purple → green, `encoder`
+  green → blue, `output` blue → green, `temporal` orange → gold, `aux` teal
+  light → pale: blue in, green out, orange ours, grey inherited.
+- **Strokes and heads.** `flow` 0.45 → 0.60 pt; arrowheads 3.97 × 3.97 pt
+  (LibreOffice/PowerPoint `sm/sm`), `port_stub` 5 → 9.9 pt.
+- SVG→PDF now prefers LibreOffice with lossless options; rsvg-convert
+  mis-places the glyph after an italic "f" in Times New Roman on macOS.
+
+### Fixed
+
+- A caption wider than its shape stretched the shape and moved its ports to
+  the caption's edge, so arrows started in empty space. Shapes keep their
+  size; ports sit on the shape; a captioned row centres the shapes; the south
+  port sits below the caption.
+- Ports on slanted shapes (trapezoid, parallelogram, plane) now lie on the
+  outline.
+- A stage narrower than its title let the title spill off the canvas.
+- Nested containers with a title above it did not reserve room for it.
+- Arrows into a titled stage ran through the title.
+- `anchor: start` labels were drawn from the box centre; notes ignored
+  `anchor` in PPTX and VSDX.
+- Leading blanks of a run were dropped by converters, collapsing math spacing.
+- The VSDX writer printed inline markup literally (`*α*`, `**0.00**`) and
+  emitted no legend.
+- Edge labels in PPTX/VSDX were placed differently from the SVG.
+- `e → e` routes ran through the target box.
+- Facing ports a few points out of line produced 2 pt jogs; they are now one
+  straight arrow.
+
+### Templates
+
+All sixteen templates and the quickstart were reworked for the new type and
+roles, carry a symbol table and a claim-style caption, and audit with 0 errors
+(the remaining warning is the empty image slots). Two had real defects the new
+checks found: `teaser-comparison` listed two legend entries for lines it does
+not draw; `gated-module` aligned gates with hand-measured spacers that broke
+when the type grew (now `align_x`).
+
+
 ## 2.0.0
 
 Re-derived the whole house style from a much larger corpus, and added a path

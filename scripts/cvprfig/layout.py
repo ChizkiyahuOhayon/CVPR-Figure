@@ -46,20 +46,89 @@ class Item(object):
     def cy(self):
         return self.y + self.h / 2.0
 
+    def body(self):
+        """The drawn shape, without its caption: (x, y, w, h).
+
+        A caption hangs below the shape and may be wider than it.  The shape
+        keeps its own width, centred over the caption, and arrows attach to
+        the shape -- never to the caption's bounding box, which would leave
+        them starting in empty space.
+        """
+        if self.kind != "node" or not self.spec.get("caption"):
+            return self.x, self.y, self.w, self.h
+        s = self.spec
+        h = self.h - s.get("_cap_h", 0.0) - float(s.get("caption_gap", 3.0))
+        w = min(self.w, s.get("_shape_w", self.w))
+        return self.x + (self.w - w) / 2.0, self.y, w, h
+
     def port(self, side):
         side = (side or "c").lower()
+        x, y, w, h = self.body()
+        cx, cy = x + w / 2.0, y + h / 2.0
+        if self.kind == "node" and side in ("n", "s", "e", "w"):
+            fx, fy = port_frac(self.spec.get("shape", "box"), self.spec, side, w, h)
+            if side == "s" and self.spec.get("caption"):
+                # leave from under the caption, never through it
+                return (x + fx * w, self.y + self.h + 0.5)
+            return (x + fx * w, y + fy * h)
+        if self.kind != "node" and side in ("n", "s") and self.spec.get("title"):
+            # an arrow into a titled stage stops at the title, not through it
+            pos = self.spec.get("title_pos", "above")
+            ts = float(self.spec.get("title_size", style.TYPE["stage_title"]["size"]))
+            th = ts * (1.0 + 0.18 * (len(str(self.spec["title"]).split("\n")) - 1)) \
+                * len(str(self.spec["title"]).split("\n"))
+            if side == "n" and pos == "above":
+                return (cx, y - style.GEOM["stage_title_gap"] - th - 0.5)
+            if side == "s" and pos == "below":
+                return (cx, y + h + style.GEOM["stage_title_gap"] + th + 0.5)
         table = {
-            "n": (self.cx, self.y), "s": (self.cx, self.y + self.h),
-            "w": (self.x, self.cy), "e": (self.x + self.w, self.cy),
-            "c": (self.cx, self.cy),
-            "nw": (self.x, self.y), "ne": (self.x + self.w, self.y),
-            "sw": (self.x, self.y + self.h), "se": (self.x + self.w, self.y + self.h),
-            "nn": (self.cx, self.y), "ss": (self.cx, self.y + self.h),
+            "n": (cx, y), "s": (cx, y + h),
+            "w": (x, cy), "e": (x + w, cy),
+            "c": (cx, cy),
+            "nw": (x, y), "ne": (x + w, y),
+            "sw": (x, y + h), "se": (x + w, y + h),
+            "nn": (cx, y), "ss": (cx, y + h),
         }
         return table.get(side, table["c"])
 
     def __repr__(self):
         return "<%s %s %.1f,%.1f %.1fx%.1f>" % (self.kind, self.id, self.x, self.y, self.w, self.h)
+
+
+def port_frac(shape, s, side, w, h):
+    """Where an arrow meets a shape's outline, as fractions of its box.
+
+    Mid-edges of the bounding box for anything rectangular.  Slanted shapes
+    need the real outline: the east port of a parallelogram at its bounding
+    box would sit beside the slanted edge, leaving the arrow short of it.
+    The PPTX writer puts its connection sites at the same fractions.
+    """
+    mid = {"n": (0.5, 0.0), "s": (0.5, 1.0), "w": (0.0, 0.5), "e": (1.0, 0.5)}[side]
+    w = max(w, 1e-6); h = max(h, 1e-6)
+    if shape in ("plane", "parallelogram"):
+        k = float(s.get("skew", 0.34 if shape == "plane" else 0.28)) * (w if shape == "plane" else h)
+        if side == "e":
+            return (1.0 - k / 2.0 / w, 0.5)
+        if side == "w":
+            return (k / 2.0 / w, 0.5)
+        if side == "n":
+            return (0.5 + k / 2.0 / w, 0.0)
+        if side == "s":
+            return (0.5 - k / 2.0 / w, 1.0)
+    if shape in ("trapezoid", "encoder", "invtrapezoid", "decoder"):
+        d = s.get("dir", "right")
+        if shape in ("invtrapezoid", "decoder"):
+            d = {"right": "left", "left": "right"}.get(d, "left")
+        if d in ("right", "e", "left", "w"):
+            sl = float(s.get("slant", 0.22)) * h
+            narrow = side in ("n", "s") and True
+            if narrow:
+                return (0.5, (sl / 2.0) / h if side == "n" else 1.0 - (sl / 2.0) / h)
+        else:
+            sl = float(s.get("slant", 0.22)) * w
+            if side in ("w", "e"):
+                return ((sl / 2.0) / w if side == "w" else 1.0 - (sl / 2.0) / w, 0.5)
+    return mid
 
 
 # ------------------------------------------------------------------ build
@@ -269,6 +338,10 @@ def measure_node(item, ctx):
         s["_cap_h"] = ch
         item.cap = ch + float(s.get("caption_gap", 3.0))
         item.h += item.cap
+        # A box-like module may widen to its caption (it is snapped with its
+        # siblings anyway); anything with an intrinsic size -- an image, a
+        # slab, a cube -- keeps it and the caption overhangs.
+        s["_shape_w"] = item.w if shape not in BOXY else max(item.w, cw)
         item.w = max(item.w, cw)
 
 
@@ -298,6 +371,8 @@ def measure(item, ctx):
     pad = _pad(s, item)
     gap = float(s.get("gap", style.GEOM["gap_x" if item.kind == "row" else "gap_y"]))
     uniform = s.get("uniform", True)
+    above = [_above_title(c) for c in item.children]
+    s["_above"] = above
 
     if item.kind == "row":
         if uniform:
@@ -308,7 +383,15 @@ def measure(item, ctx):
                     if _snappable(c) and c.spec.get("h") is None:
                         c.h = top + c.cap
         inner_w = sum(c.w for c in item.children) + gap * max(0, len(item.children) - 1)
-        inner_h = max([c.h for c in item.children] or [0])
+        inner_h = max([c.h + a for c, a in zip(item.children, above)] or [0])
+        s["_body_band"] = None
+        if any(c.cap for c in item.children) and s.get("align", "center") in ("center", "middle"):
+            # Centre the shapes, not shape+caption, so a captioned image and
+            # the module beside it share a centre line and the arrow between
+            # them stays straight; captions hang below.
+            band = max(c.h - c.cap for c in item.children)
+            s["_body_band"] = band
+            inner_h = max((band + (c.h - c.cap)) / 2.0 + c.cap for c in item.children)
     else:
         if uniform:
             ws = [c.w for c in item.children if _snappable(c)]
@@ -318,7 +401,8 @@ def measure(item, ctx):
                     if _snappable(c) and c.spec.get("w") is None:
                         c.w = wide
         inner_w = max([c.w for c in item.children] or [0])
-        inner_h = sum(c.h for c in item.children) + gap * max(0, len(item.children) - 1)
+        inner_h = (sum(c.h for c in item.children) + sum(above)
+                   + gap * max(0, len(item.children) - 1))
 
     title_h = _title_height(s, ctx)
     if s.get("title") and s.get("title_pos") == "inside-bottom":
@@ -326,6 +410,16 @@ def measure(item, ctx):
         pad = (pad[0], pad[1], pad[2] + title_h, pad[3])
         title_h = 0.0
     item.w = max(inner_w + pad[1] + pad[3], float(s.get("minw", 0)))
+    if s.get("title") and not s.get("w"):
+        # a stage is never narrower than its own title, or the title spills
+        # over its neighbours or off the canvas
+        ts = float(s.get("title_size", style.TYPE["stage_title"]["size"]))
+        tw = T.measure(s["title"], ts, ctx.get("font", "times"),
+                       s.get("title_bold", True), s.get("title_italic", True))[0]
+        if tw + 2.0 > item.w:
+            extra = tw + 2.0 - item.w
+            item.w += extra
+            s["_title_extra"] = extra
     item.h = max(inner_h + pad[0] + pad[2], float(s.get("minh", 0)))
     item.h += title_h
     if s.get("w"):
@@ -335,6 +429,16 @@ def measure(item, ctx):
     s["_pad"] = pad
     s["_gap"] = gap
     s["_title_h"] = title_h
+
+
+def _above_title(c):
+    """Room a nested container's "above" title needs inside its parent."""
+    s = c.spec
+    if c.kind == "node" or not s.get("title") or s.get("title_pos", "above") != "above":
+        return 0.0
+    ts = float(s.get("title_size", style.TYPE["stage_title"]["size"]))
+    n = len(str(s["title"]).split("\n"))
+    return ts * (1.0 + 0.18 * (n - 1)) * n + style.GEOM["stage_title_gap"]
 
 
 def _snappable(c):
@@ -388,12 +492,17 @@ def place(item, x, y, ctx):
     iw = item.w - pad[1] - pad[3]
     ih = item.h - pad[0] - pad[2] - title_h
 
+    above = s.get("_above") or [0.0] * len(item.children)
     if item.kind == "row":
         total = sum(c.w for c in item.children) + gap * max(0, len(item.children) - 1)
         justify = s.get("justify", "center")
         cx = ix + _offset(justify, iw, total)
-        for c in item.children:
-            cy = iy + _offset(align, ih, c.h)
+        band = s.get("_body_band")
+        for c, ab in zip(item.children, above):
+            cy = iy + ab + _offset(align, ih - ab, c.h)
+            if band is not None:
+                top_pad = (ih - _band_extent(item.children, band)) / 2.0
+                cy = iy + top_pad + (band - (c.h - c.cap)) / 2.0
             if c.spec.get("align") in ("start", "top"):
                 cy = iy
             elif c.spec.get("align") in ("end", "bottom"):
@@ -401,10 +510,12 @@ def place(item, x, y, ctx):
             place(c, cx + float(c.spec.get("dx", 0)), cy + float(c.spec.get("dy", 0)), ctx)
             cx += c.w + gap
     else:
-        total = sum(c.h for c in item.children) + gap * max(0, len(item.children) - 1)
+        total = (sum(c.h for c in item.children) + sum(above)
+                 + gap * max(0, len(item.children) - 1))
         justify = s.get("justify", "center")
         cy = iy + _offset(justify, ih, total)
-        for c in item.children:
+        for c, ab in zip(item.children, above):
+            cy += ab
             cx = ix + _offset(align, iw, c.w)
             if c.spec.get("align") in ("start", "left"):
                 cx = ix
@@ -412,6 +523,10 @@ def place(item, x, y, ctx):
                 cx = ix + iw - c.w
             place(c, cx + float(c.spec.get("dx", 0)), cy + float(c.spec.get("dy", 0)), ctx)
             cy += c.h + gap
+
+
+def _band_extent(children, band):
+    return max((band + (c.h - c.cap)) / 2.0 + c.cap for c in children)
 
 
 def _offset(mode, avail, used):

@@ -35,6 +35,36 @@
 
 ---
 
+## v3 新变化
+
+v3 来自把 v2.0 用在一篇真实 CVPR 投稿上的经验：出问题的地方全都在图离开引擎**之后**——
+在手动改过的 PPTX 里，以及从它导出的 PDF 里。
+
+- **审计跟着文件走。** `audit_pptx.py` 可以审计任何被手动修改过的 PPTX（WPS、PowerPoint、
+  Keynote 改过的都行，FigGenie 生成的 PPTX 也行）：会被 WPS 画成 45° 的拐弯箭头、丢失的
+  上下标、指向已删除元素的图例项、没有粘在框上的箭头、印出来太小的字、分辨率不足的图片、
+  会被栅格化的阴影特效。`audit_pdf.py` 审计 LaTeX 实际引用的 PDF；`export_pptx.py` 做无损
+  导出——LibreOffice 默认设置曾把一张 4000 ppi 的图降成了 298 ppi 的 JPEG。
+- **每个符号都要有定义。** 标签支持 LaTeX 数学写法（`$z_{1:4}$`、`$\tilde c_s$`、
+  `$N \times C$`），变量斜体、运算符间距都和正文一致。`symbols:` 符号表和图注（可以直接写
+  在 spec 里，也可以从论文 `.tex` 里读）会被逐一核对：既没在图中文字里写明、也没在图注里
+  定义的符号直接报错。同一篇论文的所有图共用一个 `paper.yaml`，配色和符号写法不会漂移。
+- **字更大。** 模块标签 7.5 pt，标题 8.5 pt——取自大家想模仿的那几篇论文（SparseWorld、
+  Occ3D、BEVDepth）的实测中位数。下限 6.0 pt，模块名不低于 7.0 pt。`type_scale` 可以
+  一次性整体放大。
+- **去掉"AI 感"。** Tailwind / Material / Bootstrap 的默认色直接报错，高饱和填充和同色描边
+  会被标出；贡献模块用暖橙色，输出用绿色，沿用的部分用灰色。
+- **经得起手动修改的箭头。** PPTX 里的箭头是真正粘在框上的 Office 连接线——挪动模块，
+  箭头跟着走。拐弯箭头的最后一段永远够长，WPS 不会画歪；平行的线各走各的通道；空隙不够
+  时引擎会把空隙撑宽，而不是把线挤在一起。SVG 和 PPTX 的箭头大小按"最终导出 PDF 的软件"
+  对齐。
+- **在四个软件里实测过。** 同一个文件在 WPS、Keynote、LibreOffice、PowerPoint 里各有什么
+  差异，见 [`references/app-compatibility.md`](references/app-compatibility.md)。
+
+完整列表见 [`CHANGELOG.md`](CHANGELOG.md)。
+
+---
+
 ## 为什么要做这个
 
 AI 生成的框架图不是"丑"，而是**通用**。审稿人一秒就能认出来：
@@ -53,7 +83,7 @@ AI 生成的框架图不是"丑"，而是**通用**。审稿人一秒就能认�
 上面每一条都是**默认行为**。`CVPR-Figure` 的做法不是"提示模型别这么画"，而是**把这些默认从引擎里拆掉**：
 
 - 配色、字号、线宽、圆角、内边距，全部是用 PyMuPDF **从 349 张已发表论文配图 PDF 的矢量内容里量出来的**，不是自己编的——完整的证据链，包括三条因证据不足而被砍掉的规则，在 [`references/corpus-report.md`](references/corpus-report.md)；
-- 版面由确定性求解器计算，**单位是最终印刷磅值**——spec 里写 `size: 7.0`，纸上就是 7.0 pt，不需要心算；
+- 版面由确定性求解器计算，**单位是最终印刷磅值**——spec 里写 `size: 7.5`，纸上就是 7.5 pt，不需要心算；
 - 箭头被**强制**沿端口法向进出、直角转折；
 - 交付前必须过**审计器**，它会把上面那些特征逐条点名。
 
@@ -85,8 +115,10 @@ PS MT。所以"生成原生 `.pptx`/`.vsdx` + Office 色卡"不是一种审美�
 
 **字号比所有人以为的都小。** 把每张图自己的"画布→栏宽"缩放系数（中位数 0.385）算进去
 之后，最终印在纸上的字号中位数是 **6.0 pt**，四分位是 4.5 和 7.5；每张图里**最小**那个
-字号的中位数是 5.4 pt。这直接定下了审计器 5.0 pt 的下限——同时也暴露出 v1 的线宽**大约
-粗了一倍**，因为实测的印刷线宽众数是 0.19、0.36、0.45、0.80 pt。
+字号的中位数是 5.4 pt。v2.0 把下限定在这里——结果按这个字号做出来的图读起来偏小。v3
+重新测量了大家真正想模仿的论文（SparseWorld 的 Visio 总览图印刷字号中位数 7.5 pt，Occ3D
+8.2 pt，BEVDepth 8.6 pt），改为 7.5 pt 标签、6.0 pt 下限。同一次扫描还暴露出 v1 的线宽
+**大约粗了一倍**：实测的印刷线宽众数是 0.19、0.36、0.45、0.80 pt。
 
 **框架图里有真实数据。** 57% 的架构图至少嵌了一张位图——中位数 **11 张**、占画布约四分之一
 ——而且这些图里 **66% 在最左和最右两端都放了图像**。输入进去，预测出来，架构在中间。
@@ -113,10 +145,11 @@ wrote build/quickstart.pdf
 wrote build/quickstart.png
 wrote build/quickstart.pptx
 wrote build/quickstart.vsdx
-  pdf via libreoffice
-  png via pdftoppm @600 dpi -- 4147 x 1530 px
-  pptx: 44 shapes, 0 embedded image(s)
-  canvas 496.8 x 182.8 pt | 10 nodes | 8 edges | scale 1.000
+  pdf via libreoffice (lossless)
+  png via pdftoppm @600 dpi -- 4146 x 1544 px
+  pptx: 44 shapes, 0 embedded image(s), 8 glued connector(s)
+  pdf audit: 0 error(s), 0 warning(s)
+  canvas 496.8 x 184.9 pt | 10 nodes | 8 edges | scale 1.000
 ```
 
 <p align="center">
@@ -125,13 +158,24 @@ wrote build/quickstart.vsdx
 
 这张图来自 [`examples/quickstart.yaml`](examples/quickstart.yaml)，约 50 行。
 用 PowerPoint 打开 `build/quickstart.pptx`、或用 Visio 打开 `build/quickstart.vsdx`，
-拖一下方框试试：**每个元素都是原生形状，不需要"取消组合"**。
+拖一下方框试试：**每个元素都是原生形状，不需要"取消组合"**，而且箭头是粘在框上的：
+在 PowerPoint 或 WPS 里挪动方框，箭头会跟着走。
 
 然后检查它：
 
 ```bash
 python3 scripts/validate.py examples/quickstart.yaml --svg build/quickstart.svg
-# 0 error(s), 0 warning(s), 0 note(s) | 497 x 183 pt | 10 nodes
+# WARN empty-image-slot  2 image slot(s) have no `src` ...
+# 0 error(s), 1 warning(s), 0 note(s) | 497 x 185 pt | 10 nodes
+```
+
+唯一的 warning 是实话：两个图片位在你放入真实截图之前都只是占位框。
+
+手动改过 PPTX 之后，要审计真正交付的文件，而不是 spec：
+
+```bash
+python3 scripts/audit_pptx.py build/quickstart.pptx --width 496.8 --spec examples/quickstart.yaml
+python3 scripts/export_pptx.py build/quickstart.pptx --width 496.8   # 无损导出 PDF，并自动审计
 ```
 
 ---
@@ -212,7 +256,7 @@ sudo apt install inkscape libreoffice-draw poppler-utils imagemagick librsvg2-bi
 
 ### 1. 图表契约——动笔前先答题
 
-[`static/core/contract.md`](static/core/contract.md) 里有七个问题，第一个最关键：
+[`static/core/contract.md`](static/core/contract.md) 里有八个问题（含符号表），第一个最关键：
 
 > 这张图要让读者相信：______________________
 
@@ -234,27 +278,37 @@ panels:
   - id: s_core
     title: "Our Contribution"          # 粗斜体，位于虚线容器上方
     frame: dashed
-    fill: gold.pale
+    fill: orange.pale
     body:
-      - {id: q, shape: slab, n: 5, cell: 8, cellh: 26, role: attention}
+      - {id: q, shape: slab, n: 5, cell: 8, cellh: 26, role: attention,
+         caption: "$N$ queries"}                # 数学写法：变量斜体，和正文一致
       - group:                          # 带重复次数角标的着色子区域
           id: blk
           frame: region
-          frame_color: gold.deep
-          badge: "×L"
+          frame_color: orange.deep
+          badge: "$\\times L$"
           body:
-            - {id: b1, text: "Cross-Attention", role: core, outline: match}
-            - {id: b2, text: "Feed Forward",    role: core, outline: match}
+            - {id: b1, text: "Cross-Attention", role: core}
+            - {id: b2, text: "Feed Forward",    role: core, tint: light}
 
 edges:
-  - {from: q, to: blk, color: gold.deep}
+  - {from: q, to: blk, color: orange.deep}
   - {from: q.w, to: sum.w, route: bus, bend: 10, dash: true, label: "residual"}
+
+symbols:                                # 图里出现的每一个符号
+  "N":       {meaning: "number of queries", defined_in: figure}
+  "L":       {meaning: "number of decoder layers", defined_in: caption}
+  "\\oplus": {meaning: "element-wise addition", defined_in: caption}
+
+caption: >-                             # 或 caption_tex: sec/3_method.tex#fig:overview
+  \textbf{Learnable queries read the image once per layer.} $N$ queries
+  cross-attend in each of $L$ layers and are added back ($\oplus$).
 ```
 
 有两个特性承担了绝大部分"看起来像手工排版"的效果：
 
 - **等尺寸吸附**——列里的方框类兄弟节点吸附到最宽者，行里吸附到最高者，于是一摞模块自然落在网格上；
-- **端口法向路由**——不管你指定什么走线方式，线一定沿源端口法向离开、沿目标端口法向进入，只走直角。箭头永远不会平贴着边缘扎进去。
+- **端口法向路由**——不管你指定什么走线方式，线一定沿源端口法向离开、沿目标端口法向进入，只走直角。箭头永远不会平贴着边缘扎进去，而且拐弯后的最后一段永远够长，任何软件都能把箭头画正。
 
 ### 3. 审计——交付之前
 
@@ -490,27 +544,44 @@ python3 scripts/make_stencil.py -o build/stencil -f vsdx,pptx
 python3 scripts/validate.py spec.yaml --svg build/fig.svg [--strict] [--json]
 ```
 
+大约四十项检查，完整列表见
+[`references/anti-ai-checklist.md`](references/anti-ai-checklist.md)。最重要的几项：
+
 | 代码 | 级别 | 抓什么 |
 |---|---|---|
-| `text-too-small` | error | **最终印刷尺寸**下小于 5.0 pt 的文字（语料库第 29 百分位）|
-| `label-overflow` | error | 文字比框还宽 |
-| `node-overlap` | error | 两个兄弟节点占同一块地方 |
+| `text-too-small` | error | **最终印刷尺寸**下小于 6.0 pt 的文字（6.5 pt 以下警告；模块名不低于 7.0 pt）|
+| `undefined-symbol` | error | 既没在图中文字里写明、也没在图注里定义的符号 |
+| `symbol-not-in-caption` | error | 标为 `defined_in: caption`，图注里却没写 |
+| `legend-unused-entry` | error | 图例里有、图里却没有用到的项 |
+| `short-final-segment` | error | 拐弯箭头最后一段太短——WPS 会把箭头画成 45° |
+| `corridor-too-narrow` | error | 空隙放不下要从中穿过的线 |
+| `ai-palette` | error | Tailwind / Material / Bootstrap 默认色 |
+| `image-low-ppi` | error | 嵌入图片在印刷尺寸下不足 300 ppi（600 以下警告）|
+| `label-overflow` / `node-overlap` | error | 文字比框宽、模块重叠 |
+| `text-off-canvas` / `edge-off-canvas` | error | 会被 LaTeX 裁掉的内容 |
 | `inconsistent-role` | error | 同一个概念画成了两种颜色 |
-| `bad-edge` | error | 边引用了不存在的节点 |
-| `emoji` | error | emoji 或装饰字符 |
-| `edge-crosses-node` | warning | 箭头从第三个模块身上穿过去 |
-| `off-palette` | warning | 用了色板之外的颜色 |
-| `too-many-hues` | warning | 超过 5 个色系 |
-| `stroke-zoo` | warning | 超过 4 种不同线宽 |
-| `mixed-fonts` | warning | 一张图里混用两种字体 |
-| `label-verbose` | warning | 标签超过 6 个词 |
-| `tall-figure` | warning | 超出该会场的高度预算 |
-| `gradient` / `shadow` | warning | SVG 里有渐变或滤镜 |
-| `unconnected` | note | 某个模块没有任何箭头连接 |
+| `upright-variable` | warning | 图里 `z_t` 是正体，正文里却是斜体 |
+| `unexplained-line-style` | warning | 虚线或彩色箭头既不在图例里、也没有标注 |
+| `edges-share-corridor` | warning | 两条线挤在一起，看起来像一条 |
+| `edge-crosses-node` / `edge-crosses-text` | warning | 箭头穿过模块、图题或标签 |
+| `saturated-fill` / `tinted-outlines` | warning | UI 卡片式的"AI 感" |
 
 有 error 时退出码非零，加 `--strict` 时 warning 也会非零——可以直接挂进 CI 或 pre-commit。
 
-它不是摆设。在一篇真实论文上，它抓出了 4 个 5.4 pt 的标签、一张用了 6 个色系的图、以及一个把 `encoder` 画成两种颜色的模板——这些本来都会被交出去。
+### 交付之后
+
+真正交付的不是 spec。PPTX 一旦被手动修改，它就是唯一的源文件；要审计它，以及从它导出的 PDF：
+
+```bash
+python3 scripts/audit_pptx.py fig.pptx --width 496.8 --spec spec.yaml   # 任意 PPTX，FigGenie 的也行
+python3 scripts/export_pptx.py fig.pptx --width 496.8                   # 无损导出 PDF 并审计
+python3 scripts/audit_pdf.py   fig.pdf  --width 496.8
+```
+
+在一篇真实投稿手动修改过的总览图上，`audit_pptx.py` 准确报出了最终流进 PDF 的三类问题：
+两条被 WPS 画成 45° 的拐弯箭头（最后一段只有 2.5 pt 和 3.5 pt）、20 处被抹平成普通文字
+的下标（`z1:4`、`O5:10`、`d1`……）、以及一个指向已删除箭头的图例项。详见
+[`references/after-handover.md`](references/after-handover.md)。
 
 审计器判断不了图**是否讲清楚了**。请渲染一张 PNG 亲眼看一遍。
 
@@ -529,10 +600,14 @@ python3 scripts/validate.py spec.yaml --svg build/fig.svg [--strict] [--json]
 \end{figure*}
 ```
 
-就是 100% 呈现，spec 里的 `size: 7.0` 在纸上就是 7.0 pt。
+就是 100% 呈现，spec 里的 `size: 7.5` 在纸上就是 7.5 pt。
 
 想放到栏宽的 80%？在 **spec 里**设 `width_frac: 0.8`，LaTeX 那边保持 `width=\linewidth`。
-写成 `width=0.8\linewidth` 会把字号一起缩到 5.6 pt。
+写成 `width=0.8\linewidth` 会把字号一起缩到 6.0 pt。
+
+图注要写明论断、按阅读顺序列出部件、说明颜色含义，并**定义图里每一个没有用文字写明的
+符号**——写完一定重新编译检查页数，因为图注多一行，后面的正文就会往后挪一行。PDF 必须是
+无损的：`render.py` 和 `export_pptx.py` 会处理好，`audit_pdf.py` 负责确认。
 
 | 会场 | `\columnwidth` | `\textwidth` |
 |---|---|---|
@@ -575,7 +650,7 @@ install.sh                一条命令装成 Claude Code skill
 
 static/core/
   stance.md               不可妥协的规矩 + "AI 味"清单
-  contract.md             动笔前必须回答的七个问题
+  contract.md             动笔前必须回答的八个问题
 
 references/
   corpus-report.md        每一项测量，以及被砍掉的规则
@@ -586,17 +661,24 @@ references/
   case-studies.md         已发表论文的图逐张拆解
   anti-ai-checklist.md    自动审计项 + 人眼复核流程
   visio-workflow.md       Visio / PowerPoint / Illustrator 编辑
-  latex-integration.md    尺寸换算、浮动体、camera-ready 检查
+  latex-integration.md    尺寸换算、浮动体、图注、无损导出、camera-ready 检查
+  symbols-and-captions.md 标签里的数学写法、符号表、图注
+  after-handover.md       审计手动改过的 PPTX 和导出的 PDF
+  app-compatibility.md    WPS / Keynote / LibreOffice / PowerPoint 实测差异
 
 scripts/
   render.py               spec -> svg / pdf / png / tiff / emf / vsdx / pptx
   from_code.py            PyTorch 源码或 mmdet config -> spec
-  validate.py             审计器
+  validate.py             审计器（spec）
+  audit_pptx.py           审计任意 PPTX（手动修改之后）
+  audit_pdf.py            审计 LaTeX 引用的 PDF
+  export_pptx.py          无损 PPTX -> PDF（LibreOffice 或 Keynote）
   make_stencil.py         模块面板生成器
   cvprfig/                引擎（纯标准库）
     palettes.py           三套实测色板，各自保持完整
     style.py              字号、线宽、几何常量、语义角色
-    text.py               烘焙好的 Adobe Core-14 字宽 + 行内标记
+    text.py               烘焙好的 Adobe Core-14 字宽、行内标记、数学排版、符号抽取
+    ooxml.py              读回任意 PPTX：路径、文字、图片、连接关系
     imgsize.py            PNG/JPEG/GIF/PDF 尺寸读取，零依赖
     layout.py             盒模型求解器
     edges.py              正交路由
@@ -623,7 +705,7 @@ tests/test_engine.py      回归测试（引擎、导出器、审计器、code2f
 python3 tests/test_engine.py
 ```
 
-167 项检查，零依赖，约两秒。覆盖：字宽测量对照已发表论文的实际框宽、内置 YAML 解析器（与 PyYAML 输出逐字节一致）、版面吸附、端口法向路由、颜色与具名线宽解析、容器嵌套形式、每一种形状、**十六个**模板的渲染**并且通过审计**、`.vsdx` / `.pptx` 包结构与形状数量、位图嵌入与真实宽高比、两个代码 reader 的端到端行为（子模块、数据流边、分支保留、管道模块剪枝、角色推断、config 注释）、栏宽自适应阶梯，以及审计器自身的正反例。
+212 项检查，零依赖，几秒钟。覆盖：字宽测量对照已发表论文的实际框宽、内置 YAML 解析器（与 PyYAML 输出逐字节一致）、版面吸附、端口法向路由、颜色与具名线宽解析、容器嵌套形式、每一种形状、**十六个**模板的渲染**并且通过审计**、`.vsdx` / `.pptx` 包结构与形状数量、位图嵌入与真实宽高比、两个代码 reader 的端到端行为（子模块、数据流边、分支保留、管道模块剪枝、角色推断、config 注释）、栏宽自适应阶梯，以及审计器自身的正反例。
 
 CI 在 Python 3.9 / 3.11 / 3.13 上**不装任何依赖**跑这些测试，所以一旦有人引入依赖，构建会直接失败。
 
@@ -659,7 +741,7 @@ WARNING: Layout is 539.6 pt wide but the target column is 504.0 pt,
          so the figure is scaled to 93%; body labels render at ~6.5 pt.
 ```
 
-低于 5.0 pt 就升级成 error。正确的解法是缩短标签、砍掉一个阶段、或者拆成两张图——不是接受这个缩放。
+低于 6.0 pt 就升级成 error。正确的解法是缩短标签、砍掉一个阶段、或者拆成两张图——不是接受这个缩放。
 </details>
 
 <details>

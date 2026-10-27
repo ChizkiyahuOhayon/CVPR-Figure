@@ -1,6 +1,6 @@
 # The figure contract
 
-Fill this in **before** writing any spec. Three minutes here removes most of
+Fill this in **before** writing any spec — all eight items. Three minutes here removes most of
 the revision cycles; skipping it is why generated figures look like they were
 generated.
 
@@ -37,17 +37,22 @@ at one element, the figure has no focal point and will read as a flowchart.
 
 ## 4. Semantic colour assignment
 
-Write out the map before drawing. Reuse it in every figure of the paper.
+Write out the map before drawing. Reuse it in every figure of the paper — put
+it in a shared `paper.yaml` (`roles:`) so it cannot drift.
 
 ```
-core      -> <the contribution>
-encoder   -> <feature extraction>
-attention -> <token mixing>
-temporal  -> <anything time-indexed>
-memory    -> <state / cache>
-decoder   -> <heads and outputs>
+core      -> <the contribution>                 orange.light by default
+encoder   -> <feature extraction>               blue.light
+attention -> <token mixing>                     blue.soft
+temporal  -> <anything time-indexed>            gold.light
+memory    -> <state / cache>                    red.light
+decoder   -> <heads and outputs>                green.light
 grey      -> <everything the paper does not claim>
 ```
+
+Pale Office tints for fills, black outlines, saturated colour only on arrows
+and on label text that ties back to an entity. Never Tailwind/Material
+defaults (`#3B82F6`, `#8B5CF6`, `#10B981` ...) — the auditor fails them.
 
 ## 5. Venue and physical size
 
@@ -71,9 +76,29 @@ List the crops you will drop into the `image` slots: input frames, an output
 render, a failure case. Note where they come from. A figure with every slot
 still a placeholder is not finished.
 
-## 7. Reviewer risks
+## 7. The symbol table
+
+List every symbol the figure will show — variables, indices, operators
+(⊕ ⊗ ⓒ), stacking brackets, repeat badges (`×L`). For each:
+
+| Symbol | Meaning, one sentence | Defined in | Written in the text as |
+|---|---|---|---|
+| `c_s` | world memory at map scale *s* | caption | `$c_s$` |
+| `z_t` | BEV feature map of frame *t* | label "BEV features $z_t$" | `$z_t$` |
+| `⊕` | element-wise addition | caption | `$\oplus$` |
+
+Put a symbol in the figure only if the text uses it too; otherwise write the
+words ("World canvas", not `c_s`). The reader must understand the figure from
+the figure and its caption alone. This table becomes the spec's `symbols:`,
+the caption goes into `caption:` (or `caption_tex:`), and the auditor checks
+both. See `references/symbols-and-captions.md`.
+
+## 8. Reviewer risks
 
 - Which arrow direction could be misread?
 - Which two boxes could be confused because they share a fill?
 - Is any claim visible only in colour?
 - Does the caption state the claim, or just name the picture?
+- Is every symbol defined in a label or in the caption, in reading order?
+- Who will edit the PPTX, in which application, and which application will
+  export the paper PDF? (`pptx_app`, and `export_pptx.py` afterwards.)

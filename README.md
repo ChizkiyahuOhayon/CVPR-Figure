@@ -37,6 +37,43 @@
 
 ---
 
+## What's new in v3
+
+v3 comes from using v2.0 on a real CVPR submission, where everything that
+went wrong went wrong *after* the figure left the engine — in the hand-edited
+PPTX and the PDF exported from it.
+
+- **The audit follows the file.** `audit_pptx.py` audits any PPTX after it
+  has been edited by hand (in WPS, PowerPoint or Keynote, and FigGenie's
+  PPTX too): bent arrows WPS will draw at 45°, flattened subscripts,
+  legend entries for deleted arrows, unglued arrows, type that prints too
+  small, low-ppi pictures, raster effects. `audit_pdf.py` audits the PDF LaTeX
+  includes; `export_pptx.py` exports it losslessly — LibreOffice's default
+  turned a 4000 ppi crop into a 298 ppi JPEG.
+- **Every symbol is defined.** Labels take LaTeX maths (`$z_{1:4}$`,
+  `$\tilde c_s$`, `$N \times C$`), set italic and spaced like the paper.
+  A `symbols:` table and the caption (inline, or read straight out of your
+  `.tex`) are checked: a symbol defined neither in a label nor in the caption
+  is an error. One `paper.yaml` shares colours and notation across figures.
+- **Bigger type.** Labels 7.5 pt, titles 8.5 pt — the median of the papers
+  users want their figures to look like (SparseWorld, Occ3D, BEVDepth). Floor
+  6.0 pt; module names ≥ 7.0 pt. `type_scale` enlarges a whole figure.
+- **No generated look.** Tailwind / Material / Bootstrap colours are an error,
+  saturated fills and colour-matched outlines are flagged; the contribution is
+  warm orange, outputs green, inherited parts grey.
+- **Arrows that survive editing.** PPTX arrows are glued Office connectors —
+  move a module and its arrows follow. A bent arrow's last run is always long
+  enough for WPS to aim its head; parallel wires get their own lanes; the
+  router widens a gap rather than squeezing wires together. Arrowhead sizes
+  match between SVG and PPTX for the application that exports your PDF.
+- **Measured in four applications.** What WPS, Keynote, LibreOffice and
+  PowerPoint each do with the same file is tabulated in
+  [`references/app-compatibility.md`](references/app-compatibility.md).
+
+Full list in [`CHANGELOG.md`](CHANGELOG.md).
+
+---
+
 ## Why this exists
 
 Machine-made framework figures are not ugly. They are **generic**, and reviewers
@@ -61,8 +98,8 @@ they cannot come back by accident:
   invented — the full audit trail, including three rules that were tested and
   cut for lack of evidence, is in
   [`references/corpus-report.md`](references/corpus-report.md);
-- layout is solved deterministically **in final printed points** — `size: 7.0`
-  in the spec is 7.0 pt on the printed page, with no mental arithmetic;
+- layout is solved deterministically **in final printed points** — `size: 7.5`
+  in the spec is 7.5 pt on the printed page, with no mental arithmetic;
 - arrows are *forced* to leave and enter along port normals and turn at right
   angles;
 - an **auditor** must pass before you ship, and it names each tell individually.
@@ -101,8 +138,11 @@ strokes: 45% of all stroke length is pure #000000
 **Type is smaller than anyone admits.** Applying each figure's own
 canvas-to-column scale factor (median 0.385), the rendered glyph distribution
 has a median of **6.0 pt** and quartiles at 4.5 and 7.5. The median *smallest*
-glyph in a figure is 5.4 pt. That set the auditor's 5.0 pt floor — and it also
-showed v1's stroke weights were about **2× too heavy**, since the real rendered
+glyph in a figure is 5.4 pt. v2.0 set its floor there — and figures built at
+that size read as small. v3 re-measured the papers users hold up as the
+target (SparseWorld's Visio overview prints at a 7.5 pt median, Occ3D's at 8.2,
+BEVDepth's at 8.6) and moved to 7.5 pt labels with a 6.0 pt floor. The same
+scan showed v1's stroke weights were about **2× too heavy**: the real rendered
 modes are 0.19, 0.36, 0.45 and 0.80 pt.
 
 **Framework figures contain real data.** 57% of the architecture diagrams embed
@@ -132,10 +172,11 @@ wrote build/quickstart.pdf
 wrote build/quickstart.png
 wrote build/quickstart.pptx
 wrote build/quickstart.vsdx
-  pdf via libreoffice
-  png via pdftoppm @600 dpi -- 4147 x 1530 px
-  pptx: 44 shapes, 0 embedded image(s)
-  canvas 496.8 x 182.8 pt | 10 nodes | 8 edges | scale 1.000
+  pdf via libreoffice (lossless)
+  png via pdftoppm @600 dpi -- 4146 x 1544 px
+  pptx: 44 shapes, 0 embedded image(s), 8 glued connector(s)
+  pdf audit: 0 error(s), 0 warning(s)
+  canvas 496.8 x 184.9 pt | 10 nodes | 8 edges | scale 1.000
 ```
 
 <p align="center">
@@ -145,13 +186,25 @@ wrote build/quickstart.vsdx
 That came from [`examples/quickstart.yaml`](examples/quickstart.yaml), which is
 about 50 lines. Open `build/quickstart.pptx` in PowerPoint or
 `build/quickstart.vsdx` in Visio and drag a box: **everything is a native
-shape**, no ungrouping required.
+shape**, no ungrouping required, and the arrows are glued: drag a box in
+PowerPoint or WPS and its arrows follow.
 
 Then check it:
 
 ```bash
 python3 scripts/validate.py examples/quickstart.yaml --svg build/quickstart.svg
-# 0 error(s), 0 warning(s), 0 note(s) | 497 x 183 pt | 10 nodes
+# WARN empty-image-slot  2 image slot(s) have no `src` ...
+# 0 error(s), 1 warning(s), 0 note(s) | 497 x 185 pt | 10 nodes
+```
+
+The one warning is honest: the two image slots are placeholders until you
+give them real crops.
+
+After you edit the PPTX by hand, audit what ships instead of the spec:
+
+```bash
+python3 scripts/audit_pptx.py build/quickstart.pptx --width 496.8 --spec examples/quickstart.yaml
+python3 scripts/export_pptx.py build/quickstart.pptx --width 496.8   # lossless PDF, then audit_pdf
 ```
 
 ---
@@ -265,21 +318,31 @@ panels:
   - id: s_core
     title: "Our Contribution"          # bold italic, above a dashed container
     frame: dashed
-    fill: gold.pale
+    fill: orange.pale
     body:
-      - {id: q, shape: slab, n: 5, cell: 8, cellh: 26, role: attention}
+      - {id: q, shape: slab, n: 5, cell: 8, cellh: 26, role: attention,
+         caption: "$N$ queries"}                # maths: italic, like the paper
       - group:                          # a tinted sub-region with a repeat badge
           id: blk
           frame: region
-          frame_color: gold.deep
-          badge: "×L"
+          frame_color: orange.deep
+          badge: "$\\times L$"
           body:
-            - {id: b1, text: "Cross-Attention", role: core, outline: match}
-            - {id: b2, text: "Feed Forward",    role: core, outline: match}
+            - {id: b1, text: "Cross-Attention", role: core}
+            - {id: b2, text: "Feed Forward",    role: core, tint: light}
 
 edges:
-  - {from: q, to: blk, color: gold.deep}
+  - {from: q, to: blk, color: orange.deep}
   - {from: q.w, to: sum.w, route: bus, bend: 10, dash: true, label: "residual"}
+
+symbols:                                # every symbol the figure shows
+  "N":       {meaning: "number of queries", defined_in: figure}
+  "L":       {meaning: "number of decoder layers", defined_in: caption}
+  "\\oplus": {meaning: "element-wise addition", defined_in: caption}
+
+caption: >-                             # or caption_tex: sec/3_method.tex#fig:overview
+  \textbf{Learnable queries read the image once per layer.} $N$ queries
+  cross-attend in each of $L$ layers and are added back ($\oplus$).
 ```
 
 Two properties do most of the "this looks hand-made" work:
@@ -288,7 +351,8 @@ Two properties do most of the "this looks hand-made" work:
   widest, and in a row to the tallest, so a stack of modules sits on a grid;
 - **port-normal routing** — whatever route you ask for, the line leaves along
   the source port's normal and arrives along the target's, and turns at right
-  angles. No arrowhead ever lands flat against an edge.
+  angles. No arrowhead ever lands flat against an edge, and the run after the
+  last bend is always long enough for every editor to aim the head.
 
 ### 3. The audit — before you ship
 
@@ -552,32 +616,51 @@ Full round-trip notes in [`references/visio-workflow.md`](references/visio-workf
 python3 scripts/validate.py spec.yaml --svg build/fig.svg [--strict] [--json]
 ```
 
+About forty checks; the full table is in
+[`references/anti-ai-checklist.md`](references/anti-ai-checklist.md). The
+ones that matter most:
+
 | Code | Level | What it catches |
 |---|---|---|
-| `text-too-small` | error | anything under 5.0 pt **at final printed size** |
-| `label-overflow` | error | text wider than its box |
-| `node-overlap` | error | two siblings occupying the same space |
+| `text-too-small` | error | any text under 6.0 pt **at final printed size** (6.5 pt warns; module names ≥ 7.0) |
+| `undefined-symbol` | error | a symbol defined neither in a label nor in the caption |
+| `symbol-not-in-caption` | error | `defined_in: caption`, but the caption never writes it |
+| `legend-unused-entry` | error | a legend entry nothing in the figure uses |
+| `short-final-segment` | error | a bent arrow whose last run is too short — WPS draws the head at 45° |
+| `corridor-too-narrow` | error | a gap too narrow for the wires that jog in it |
+| `ai-palette` | error | Tailwind / Material / Bootstrap stock colours |
+| `image-low-ppi` | error | an embedded crop under 300 ppi at print size (600 warns) |
+| `label-overflow` / `node-overlap` | error | text wider than its box, overlapping modules |
+| `text-off-canvas` / `edge-off-canvas` | error | anything LaTeX would crop |
 | `inconsistent-role` | error | one concept drawn in two different fills |
-| `bad-edge` | error | an edge naming a node that does not exist |
-| `emoji` | error | emoji or dingbats |
-| `edge-crosses-node` | warning | an arrow routed through a third module |
-| `off-palette` | warning | a colour outside the house tint ladders |
-| `too-many-hues` | warning | more than five colour families |
-| `stroke-zoo` | warning | more than four distinct line weights |
-| `mixed-fonts` | warning | two type families in one figure |
-| `label-verbose` | warning | a label over six words |
-| `tall-figure` | warning | over the venue's height budget |
-| `gradient` / `shadow` | warning | gradients or filters in the SVG |
-| `unconnected` | note | a module no arrow touches |
+| `upright-variable` | warning | `z_t` upright in the figure, italic in the text |
+| `unexplained-line-style` | warning | a dashed or coloured arrow in no legend and unlabelled |
+| `edges-share-corridor` | warning | two wires that read as one |
+| `edge-crosses-node` / `edge-crosses-text` | warning | an arrow through a module, caption or title |
+| `saturated-fill` / `tinted-outlines` | warning | the UI-kit card look |
 
 Exit code is non-zero on any error, or on any warning with `--strict` — so it
 drops straight into CI or a pre-commit hook.
 
-It is not decoration. On a real paper it caught four labels at 5.4 pt, a figure
-using six colour families, and a template that drew `encoder` in two different
-fills — all of which would otherwise have shipped.
+### After the hand-over
 
-The auditor cannot judge whether the figure *communicates*. Render a PNG and
+The spec is not what ships. Once the PPTX has been edited it is the only
+source; audit it, and the PDF made from it:
+
+```bash
+python3 scripts/audit_pptx.py fig.pptx --width 496.8 --spec spec.yaml   # any PPTX, FigGenie's too
+python3 scripts/export_pptx.py fig.pptx --width 496.8                   # lossless PDF + audit
+python3 scripts/audit_pdf.py   fig.pdf  --width 496.8
+```
+
+On the hand-edited overview figure of a real submission, `audit_pptx.py`
+reported exactly the three defects that had reached the PDF: two bent arrows
+WPS drew at 45° (last runs of 2.5 and 3.5 pt), twenty subscripts flattened to
+plain text (`z1:4`, `O5:10`, `d1`…), and a legend entry for an arrow that
+had been deleted. See
+[`references/after-handover.md`](references/after-handover.md).
+
+The auditors cannot judge whether the figure *communicates*. Render a PNG and
 look at it.
 
 ---
@@ -596,11 +679,16 @@ canvas to the exact column width. So:
 \end{figure*}
 ```
 
-renders at 100 %, and `size: 7.0` in the spec is 7.0 pt on the page.
+renders at 100 %, and `size: 7.5` in the spec is 7.5 pt on the page.
 
 Want it at 80 % of the column? Set `width_frac: 0.8` **in the spec** and keep
 `width=\linewidth` in LaTeX. Writing `width=0.8\linewidth` instead shrinks your
-type to 5.6 pt.
+type to 6.0 pt.
+
+The caption states the claim, names the parts, explains the colours and
+defines every symbol the figure shows — then recompile, because a caption one
+line longer moves the text after it. The PDF must be lossless; `render.py` and
+`export_pptx.py` take care of that, `audit_pdf.py` confirms it.
 
 | Venue | `\columnwidth` | `\textwidth` |
 |---|---|---|
@@ -643,7 +731,7 @@ install.sh                one-command install as a Claude Code skill
 
 static/core/
   stance.md               the non-negotiables and the list of tells
-  contract.md             the seven questions to answer before drawing
+  contract.md             the eight questions to answer before drawing
 
 references/
   corpus-report.md        every measurement, with the rules that were cut
@@ -654,20 +742,27 @@ references/
   case-studies.md         published figures taken apart
   anti-ai-checklist.md    the automated checks plus the eye pass
   visio-workflow.md       Visio / PowerPoint / Illustrator editing
-  latex-integration.md    sizing, floats, camera-ready checks
+  latex-integration.md    sizing, floats, captions, lossless export, camera-ready
+  symbols-and-captions.md maths in labels, the symbol table, the caption
+  after-handover.md       auditing the edited PPTX and the exported PDF
+  app-compatibility.md    WPS / Keynote / LibreOffice / PowerPoint, measured
 
 scripts/
   render.py               spec -> svg / pdf / png / tiff / emf / vsdx / pptx
   from_code.py            PyTorch source or mmdet config -> spec
-  validate.py             the auditor
+  validate.py             the auditor (spec)
+  audit_pptx.py           the auditor for any PPTX, after hand edits
+  audit_pdf.py            the auditor for the PDF LaTeX includes
+  export_pptx.py          lossless PPTX -> PDF (LibreOffice or Keynote)
   make_stencil.py         the module palette generator
   cvprfig/                the engine (standard library only)
     palettes.py           the three measured colour systems, kept apart
     style.py              typography, strokes, geometry, roles
-    text.py               baked Adobe Core-14 metrics + inline markup
+    text.py               baked Adobe Core-14 metrics, inline markup, maths, symbols
+    ooxml.py              reads any PPTX back: paths, runs, pictures, glue
     imgsize.py            PNG/JPEG/GIF/PDF dimensions, no dependencies
     layout.py             the box-model solver
-    edges.py              orthogonal routing
+    edges.py              orthogonal routing, final runs, lanes
     shapes.py             the shape vocabulary
     svg.py vsdx.py pptx.py   three renderers over one layout
     miniyaml.py           dependency-free YAML subset parser
@@ -680,7 +775,8 @@ scripts/
 templates/                sixteen archetypes + stencil.vsdx / stencil.pptx
 examples/quickstart.yaml  the 50-line example above
 assets/gallery/           rendered previews
-tests/test_engine.py      regression checks (engine, exporters, auditor, code2fig)
+tests/test_engine.py      regression checks (engine, exporters, auditors, code2fig)
+tests/compat/             optional: LibreOffice round trip of every PPTX route
 ```
 
 ---
@@ -691,14 +787,23 @@ tests/test_engine.py      regression checks (engine, exporters, auditor, code2fi
 python3 tests/test_engine.py
 ```
 
-167 checks, no dependencies, about two seconds. They cover text metrics against a
+212 checks, no dependencies, a few seconds. They cover text metrics against a
 published box width, the bundled YAML parser (byte-identical output to PyYAML),
 layout snapping, port-normal routing, colour and named-stroke resolution, nested
 container forms, every shape, all sixteen templates rendering *and passing the
 auditor*, `.vsdx` / `.pptx` package structure and shape counts, raster embedding
 and real-aspect sizing, both code readers end to end (submodules, dataflow
 edges, branch survival, plumbing pruning, role inference, config annotations),
-the column-fitting ladder, and the auditor's own positive and negative cases.
+the column-fitting ladder, the auditor's own positive and negative cases, and
+for v3: maths typesetting and spacing, symbol extraction, the symbol and
+legend checks, final-run and lane guarantees, connector geometry round-tripped
+through the PPTX reader for 24 routes in four rotations, `paper.yaml`,
+`type_scale`, `align_x`, image ppi, and `audit_pptx.py` catching flattened
+subscripts and orphaned legend entries.
+
+`python3 tests/compat/lo_roundtrip.py` (needs LibreOffice and PyMuPDF) opens
+every template's PPTX in LibreOffice and checks that all 159 glued arrows are
+drawn exactly where the engine routed them.
 
 CI runs them on Python 3.9, 3.11 and 3.13 with **nothing installed**, so a
 regression that introduces a dependency fails the build.
@@ -742,7 +847,7 @@ WARNING: Layout is 539.6 pt wide but the target column is 504.0 pt,
          so the figure is scaled to 93%; body labels render at ~6.5 pt.
 ```
 
-Below 5.0 pt that becomes an error. The fix is to shorten labels, drop a stage,
+Below 6.0 pt that becomes an error. The fix is to shorten labels, drop a stage,
 or split the figure — not to accept the shrink.
 </details>
 

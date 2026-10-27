@@ -57,3 +57,7 @@ edges:
   - {from: enc.e, to: ada.w, color: "#2E75B6"}
   - {from: ada.e, to: head.w, color: "#ED7D31"}
   - {from: head.e, to: y.w}
+
+caption: >-
+  \textbf{Only the adapter is trained.} The backbone is frozen (snowflake);
+  the adapter and the head are trained (flame).

@@ -6,6 +6,10 @@
 The SVG is always written first and is the source of truth; the other formats
 are produced either by a bundled writer (vsdx, pptx) or by whichever converter
 is installed (LibreOffice, Inkscape, rsvg-convert, cairosvg, ImageMagick).
+
+Once the PPTX has been handed over and edited by hand, stop running this on
+the spec: it would overwrite the edits.  Export the PDF from the PPTX with
+export_pptx.py and audit it with audit_pptx.py / audit_pdf.py.
 """
 
 import argparse
@@ -42,10 +46,29 @@ def run(cmd, timeout=180):
 
 
 def svg_to_pdf(svg_path, out_path):
-    """Vector conversion.  Tried in quality order; returns (ok, tool)."""
+    """Vector conversion.  Tried in quality order; returns (ok, tool).
+
+    LibreOffice comes first: rsvg-convert (cairo/pango) mis-places the glyph
+    after an italic "f" in Times New Roman on macOS -- "Deformable" prints as
+    "Deƒrmable" -- while its text layer still reads correctly, so nothing
+    but a look at the page catches it.  LibreOffice is run with the lossless
+    filter options, since its default downsamples pictures to 300 dpi JPEG.
+    """
     out_dir = os.path.dirname(os.path.abspath(out_path)) or "."
     stem = os.path.splitext(os.path.basename(svg_path))[0]
 
+    so = which("soffice", "libreoffice")
+    if not so and os.path.exists("/Applications/LibreOffice.app/Contents/MacOS/soffice"):
+        so = "/Applications/LibreOffice.app/Contents/MacOS/soffice"
+    if so:
+        from export_pptx import lossless_filter
+        ok, _ = run([so, "--headless", "--norestore", "--convert-to", lossless_filter("draw"),
+                     "--outdir", out_dir, os.path.abspath(svg_path)])
+        produced = os.path.join(out_dir, stem + ".pdf")
+        if ok and os.path.exists(produced):
+            if os.path.abspath(produced) != os.path.abspath(out_path):
+                shutil.move(produced, out_path)
+            return True, "libreoffice (lossless)"
     ink = which("inkscape")
     if ink:
         ok, _ = run([ink, "--export-type=pdf", "--export-filename=%s" % out_path, svg_path])
@@ -55,23 +78,14 @@ def svg_to_pdf(svg_path, out_path):
     if rs:
         ok, _ = run([rs, "-f", "pdf", "-o", out_path, svg_path])
         if ok and os.path.exists(out_path):
-            return True, "rsvg-convert"
-    so = which("soffice", "libreoffice")
-    if so:
-        ok, _ = run([so, "--headless", "--norestore", "--convert-to", "pdf",
-                     "--outdir", out_dir, os.path.abspath(svg_path)])
-        produced = os.path.join(out_dir, stem + ".pdf")
-        if ok and os.path.exists(produced):
-            if os.path.abspath(produced) != os.path.abspath(out_path):
-                shutil.move(produced, out_path)
-            return True, "libreoffice"
+            return True, "rsvg-convert (check italic f-ligatures by eye)"
     try:
         import cairosvg
         cairosvg.svg2pdf(url=svg_path, write_to=out_path)
         return True, "cairosvg"
     except Exception:
         pass
-    return False, "no SVG->PDF converter found (install Inkscape, librsvg or LibreOffice)"
+    return False, "no SVG->PDF converter found (install LibreOffice, Inkscape or librsvg)"
 
 
 def rasterise(svg_path, pdf_path, out_path, fmt, dpi):
@@ -222,8 +236,16 @@ def main(argv=None):
         if fmt == "pptx":
             info = pptx_writer.write(fig, target)
             written.append(target)
-            notes.append("pptx: %d shapes, %d embedded image(s)"
-                         % (info["shapes"], info["media"]))
+            notes.append("pptx: %d shapes, %d embedded image(s), %d glued connector(s)"
+                         % (info["shapes"], info["media"], info["connectors_glued"]))
+            if info["freeform_edges"]:
+                notes.append("pptx: %d edge(s) have 3+ bends and stay freeform (move them by "
+                             "hand if you move their modules): %s"
+                             % (len(info["freeform_edges"]),
+                                "; ".join(info["freeform_edges"][:4])))
+            if info["split_heads"]:
+                notes.append("pptx: %d arrowhead(s) given their own straight segment because "
+                             "the last bend is too close to the target" % len(info["split_heads"]))
             continue
         if fmt == "emf":
             ok, how = svg_to_emf(svg_path, target)
@@ -252,6 +274,18 @@ def main(argv=None):
 
     if not pdf_ok and "pdf" in formats and pdf_path in written:
         written.remove(pdf_path)
+    if pdf_ok and "pdf" in formats:
+        try:
+            import audit_pdf
+            if audit_pdf.fitz is not None:
+                rows, _ = audit_pdf.audit(pdf_path, fig.meta["canvas_pt"][0])
+                bad = [r for r in rows if r["level"] in ("error", "warning")]
+                notes.append("pdf audit: %d error(s), %d warning(s)%s"
+                             % (sum(r["level"] == "error" for r in rows),
+                                sum(r["level"] == "warning" for r in rows),
+                                (" -- " + bad[0]["message"]) if bad else ""))
+        except Exception as exc:                                # pragma: no cover
+            notes.append("pdf audit skipped: %s" % exc)
 
     report = {"written": written, "notes": notes, "warnings": fig.warnings,
               "meta": fig.meta}
