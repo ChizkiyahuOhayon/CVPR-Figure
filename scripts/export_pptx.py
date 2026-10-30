@@ -107,7 +107,7 @@ def main(argv=None):
     if audit_pdf.fitz is None:
         print("  (install PyMuPDF to audit the PDF: pip install pymupdf)")
         return 0
-    rows, meta = audit_pdf.audit(out, args.width)
+    rows, meta = audit_pdf.audit(out, args.width, source=args.pptx)
     bad = [r for r in rows if r["level"] in ("error", "warning")]
     for r in bad:
         print("  %s %s %s" % ("FAIL" if r["level"] == "error" else "WARN", r["code"], r["message"]))

@@ -58,6 +58,8 @@ python3 scripts/validate.py figures/src/overview.yaml --svg figures/overview.svg
 
 # 6. AFTER THE USER HAND-EDITS THE PPTX -- the PPTX is now the only source
 python3 scripts/audit_pptx.py figures/overview.pptx --width 496.8 --spec figures/src/overview.yaml
+python3 scripts/audit_pptx.py figures/overview.pptx --width 496.8 --fix figures/overview_fixed.pptx
+#    (--fix: theme shadows off, detached subscripts re-shifted; writes a copy)
 python3 scripts/export_pptx.py figures/overview.pptx --width 496.8   # lossless PDF + audit_pdf
 ```
 

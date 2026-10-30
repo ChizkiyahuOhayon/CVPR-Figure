@@ -37,6 +37,17 @@
 
 ## v3 新变化
 
+**3.1** 修复了用 3.0 审计这篇投稿全部 17 张图时发现的三个问题：
+- 漏报了从主题继承的阴影。即使形状写了空的 `<a:effectLst/>`，LibreOffice 也照样画出
+  阴影，PowerPoint 和 Keynote 则不显示。FigGenie 导出的 PPTX 里有 139 个这样的形状，
+  现在报为 error。
+- 占用预测图的类别图例被误报为"孤立图例"。审计器现在会去嵌入图片里找这些颜色，并且
+  计入明暗不同的着色。
+- 放大后的下标在 LibreOffice 里被压得过低。引擎写入的偏移现在能让下标保持在正文字号
+  的 0.20 倍处；手工放大的下标由 `script-too-low` 检查。
+
+`audit_pptx.py --fix` 会对第一和第三个问题直接生成修好的副本。
+
 v3 来自把 v2.0 用在一篇真实 CVPR 投稿上的经验：出问题的地方全都在图离开引擎**之后**——
 在手动改过的 PPTX 里，以及从它导出的 PDF 里。
 
@@ -230,6 +241,7 @@ git clone https://github.com/ChizkiyahuOhayon/CVPR-Figure.git third_party/CVPR-F
 | **出 `.pdf`** | Inkscape / LibreOffice / `rsvg-convert` / CairoSVG 任一 |
 | **出 `.png` / `.tiff`** | `pdftoppm`（poppler-utils）或 ImageMagick |
 | **出 `.emf`** | Inkscape 或 LibreOffice |
+| **交付后审计** | PyMuPDF（`audit_pdf.py`）；在图片里找图例颜色需要 Pillow 或 PyMuPDF |
 
 `.svg`、`.vsdx`、`.pptx` 由内置代码直接写出，**永远可用**。
 
@@ -574,6 +586,7 @@ python3 scripts/validate.py spec.yaml --svg build/fig.svg [--strict] [--json]
 
 ```bash
 python3 scripts/audit_pptx.py fig.pptx --width 496.8 --spec spec.yaml   # 任意 PPTX，FigGenie 的也行
+python3 scripts/audit_pptx.py fig.pptx --width 496.8 --fix fig_fixed.pptx   # 关掉主题阴影、调回过低的下标
 python3 scripts/export_pptx.py fig.pptx --width 496.8                   # 无损导出 PDF 并审计
 python3 scripts/audit_pdf.py   fig.pdf  --width 496.8
 ```
@@ -680,6 +693,7 @@ scripts/
     text.py               烘焙好的 Adobe Core-14 字宽、行内标记、数学排版、符号抽取
     ooxml.py              读回任意 PPTX：路径、文字、图片、连接关系
     imgsize.py            PNG/JPEG/GIF/PDF 尺寸读取，零依赖
+    imgcolor.py           在图片里找图例颜色，计入明暗着色（需 Pillow 或 PyMuPDF）
     layout.py             盒模型求解器
     edges.py              正交路由
     shapes.py             形状词汇表

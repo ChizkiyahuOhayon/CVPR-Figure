@@ -237,6 +237,18 @@ The auditor fails an entry that nothing in the figure uses
 (`legend-unused-entry`) and warns about a dashed or coloured line style that
 is in no legend and carries no label. In the PPTX the legend is one group.
 
+A class legend for renders (occupancy, segmentation) names colours that only
+the pictures in `image` slots use. The auditor looks for them there,
+counting shaded tones, with Pillow or PyMuPDF. Mark an entry
+`in_image: true` to declare it without looking:
+
+```yaml
+legend:
+  items:
+    - {text: car, kind: swatch, color: "#FF9E00"}
+    - {text: pedestrian, kind: swatch, color: "#0000E6", in_image: true}
+```
+
 ## Placing things by hand
 
 The flow layout covers most cases, but two escape hatches exist and both are

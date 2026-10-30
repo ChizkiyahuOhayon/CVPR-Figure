@@ -2,7 +2,7 @@
 """Audit a PPTX as it will be printed -- after a person has edited it.
 
     python3 audit_pptx.py fig.pptx [--width 496.8] [--spec spec.yaml | --ref fig.svg]
-                          [--json] [--strict]
+                          [--fix OUT.pptx] [--legend-in-images] [--json] [--strict]
 
 ``validate.py`` audits the spec.  But once a figure has been handed over as a
 PPTX and moved around in WPS or PowerPoint, the spec no longer describes what
@@ -19,11 +19,18 @@ engine's, FigGenie's, or one drawn by hand) and checks:
                         and the PPTX no longer does; without a reference, runs
                         such as "z1:4" that look like a flattened subscript
   legend-orphan         a legend entry whose line style or swatch the figure
-                        no longer uses
+                        no longer uses -- neither on a shape nor, for a class
+                        legend, inside an embedded render
   image-low-ppi         an embedded picture under 300 ppi (warning under 600)
+  script-too-low        a subscript shifted so far that LibreOffice prints it
+                        detached from its letter
   raster-effect         shadow / glow / soft edge: LibreOffice rasterises these
-                        at 96-350 ppi on export
+                        at 96-350 ppi on export -- including a shadow the
+                        shapes inherit from the theme
   no-background         no slide background -- Keynote renders it black
+
+``--fix OUT.pptx`` writes a copy with the two mechanical repairs made --
+theme effects switched off, detached subscripts raised -- and audits that.
 
 Once a PPTX has been edited by hand it is the only source of the figure.
 Export the paper PDF from it (export_pptx.py) and never regenerate it from
@@ -37,12 +44,14 @@ import json
 import os
 import re
 import sys
+import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from cvprfig import ooxml, style, text as T                        # noqa: E402
+from cvprfig import imgcolor, ooxml, pptx, style, text as T       # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
+MAX_SUB_DROP = 0.35      # x the subscript's own printed size, as in audit_pdf.py
 
 
 class Report(object):
@@ -274,14 +283,64 @@ def check_scripts(slide, ref, rep):
     if flat:
         rep.add("error" if not ref else "warning", "lost-subscript",
                 "%d run(s) look like flattened subscripts (%s); set them as subscripts "
-                "(baseline -25000) or write them as $z_{1:4}$ in the spec"
+                "(baseline about -17000) or write them as $z_{1:4}$ in the spec"
                 % (len(flat), ", ".join(sorted(set(t for t, _ in flat))[:12])))
+    check_script_drop(slide, rep)
 
 
-def check_legend(slide, rep):
+def _script_runs(sh):
+    """``(run, body size, name)`` for every subscript run of a shape.  The
+    body size is that of the nearest base-line run in the same paragraph;
+    the name is the subscript with its base letter, e.g. ``d_1``."""
+    out, para = [], []
+    for r in sh.get("runs", []) + [{"br": True}]:
+        if not r.get("br"):
+            para.append(r)
+            continue
+        base = [(k, q["size"] or 18.0) for k, q in enumerate(para) if not q["baseline"]]
+        for k, q in enumerate(para):
+            if q["baseline"] < 0 and q["text"].strip():
+                near = min(base, key=lambda b: (abs(b[0] - k), b[0] > k)) if base else None
+                body = near[1] if near else (q["size"] or 18.0) / pptx.SCRIPT_COMPENSATION
+                letter = para[k - 1]["text"].rstrip()[-1:] if k else ""
+                out.append((q, body, "%s_%s" % (letter, q["text"].strip())))
+        para = []
+    return out
+
+
+def check_script_drop(slide, rep):
+    """LibreOffice prints a subscript at 58.5 % of its run size and moves it
+    down by baseline x the run's own size, so the drop measured against the
+    printed glyph is |baseline| / 0.585 whatever the sizes.  Past
+    MAX_SUB_DROP the subscript reads as detached -- a lone "d_1" looks like "d" and "1"."""
+    low = []
+    for sh in slide.shapes:
+        for r, body, name in _script_runs(sh):
+            own = abs(r["baseline"]) / 100000.0 / pptx.LO_SCRIPT_SIZE
+            if own > MAX_SUB_DROP + 1e-6:
+                sz = r["size"] or 18.0
+                low.append((own, abs(r["baseline"]) / 100000.0 * sz / body, r, sz, body, name))
+    if not low:
+        return
+    low.sort(key=lambda v: -v[0])
+    own, rel, r, sz, body, _ = low[0]
+    rep.add("warning", "script-too-low",
+            "%d subscript(s) are shifted down %s%d %%; LibreOffice prints them %.0f %% of their own "
+            "height (%.2f x body) below the line, where they read as detached (%s). For a %.1f pt "
+            "script on %.1f pt text use baseline=\"%d\" -- audit_pptx.py --fix OUT.pptx rewrites them"
+            % (len(low), "up to " if len(set(v[2]["baseline"] for v in low)) > 1 else "",
+               round(abs(r["baseline"]) / 1000.0), own * 100, rel,
+               ", ".join(sorted(set(v[5] for v in low))[:8]), sz, body,
+               pptx.script_baseline(-1, sz / body)))
+
+
+def check_legend(slide, rep, pics=None, assume_in_images=False):
     """Find legend swatches -- a short horizontal line or a small filled box
     with a text label immediately to its right -- and check that the figure
-    still uses each swatch's style somewhere else."""
+    still uses each swatch's style somewhere else.  A colour no shape uses
+    may still be explained by the pictures -- a class legend for occupancy or
+    segmentation renders -- so those are looked into before an entry is
+    called orphaned."""
     texts = [sh for sh in slide.shapes if ooxml.text_of(sh).strip()]
     lines = [sh for sh in slide.shapes if sh.get("open_line") and sh["paths"]
              and not sh["line"]["none"]]
@@ -328,6 +387,19 @@ def check_legend(slide, rep):
     if not swatches:
         return
     sw_ids = set(id(s) for s, _ in swatches)
+    in_pics, unread, absent = [], [], []
+
+    def orphan(label, col, what, sh):
+        seen = imgcolor.lookup(col, pics, assume_in_images)
+        if seen is True or (seen and seen[0]):
+            in_pics.append((label, None if seen is True else seen[1]))
+        elif seen is None:
+            unread.append(label)
+        elif seen:
+            absent.append((label, col, what, sh, seen[1]))
+        else:
+            rep.add("error", "legend-orphan", what, sh["name"])
+
     for sh, t in swatches:
         label = ooxml.text_of(t).strip()
         if sh.get("open_line"):
@@ -335,17 +407,59 @@ def check_legend(slide, rep):
             used = [o for o in lines if id(o) not in sw_ids and
                     (o["line"]["color"], bool(o["line"]["dash"])) == key]
             if not used:
-                rep.add("error", "legend-orphan",
-                        "legend entry %r shows a %s %s line that no other line in the figure "
-                        "uses -- the element it explained was deleted"
-                        % (label, "dashed" if key[1] else "solid", key[0]), sh["name"])
+                orphan(label, key[0], "legend entry %r shows a %s %s line that no other line in "
+                       "the figure uses -- the element it explained was deleted"
+                       % (label, "dashed" if key[1] else "solid", key[0]), sh)
         else:
             used = [o for o in slide.shapes if id(o) not in sw_ids and o.get("fill") == sh["fill"]
                     and o is not sh and o["box"][2] * o["box"][3] > sh["box"][2] * sh["box"][3]]
             if not used:
-                rep.add("error", "legend-orphan",
-                        "legend entry %r shows fill %s, which no module uses any more"
-                        % (label, sh["fill"]), sh["name"])
+                orphan(label, sh["fill"], "legend entry %r shows fill %s, which no module uses "
+                       "any more" % (label, sh["fill"]), sh)
+    if in_pics:
+        rep.add("note", "legend-in-images",
+                "%d legend entr%s drawn only inside pictures (%s): %s"
+                % (len(in_pics), "y is" if len(in_pics) == 1 else "ies are",
+                   "--legend-in-images" if assume_in_images else
+                   "largest share of one picture, counting shaded tones",
+                   ", ".join(lb if v is None else "%s %.2f %%" % (lb, 100 * v)
+                             for lb, v in in_pics)))
+    if absent and len(in_pics) >= max(2, len(absent)):
+        # A class legend: most entries are in the renders, these classes just
+        # do not occur in the samples shown.  A full palette kept on purpose
+        # for consistency across figures is a choice, not a deleted element.
+        rep.add("warning", "legend-orphan",
+                "%d class(es) of a picture legend occur in no picture: %s. If these samples "
+                "simply do not contain them, drop them from this figure's legend, or keep the "
+                "full palette on purpose to match the other figures"
+                % (len(absent), ", ".join("%s %s (%.3f %% of a picture at most)" % (lb, col, 100 * v)
+                                          for lb, col, _, _, v in absent)))
+    else:
+        for lb, col, what, sh, v in absent:
+            rep.add("error", "legend-orphan", what + " (it covers %.3f %% of the picture where "
+                    "it is most common)" % (100 * v), sh["name"])
+    if unread:
+        rep.add("warning", "legend-orphan",
+                "%d legend entr%s (%s) match no shape; the slide has pictures, but neither Pillow "
+                "nor PyMuPDF is installed to look inside them. Install one, or pass "
+                "--legend-in-images if these colours are drawn in the pictures"
+                % (len(unread), "y" if len(unread) == 1 else "ies", ", ".join(unread[:8])))
+
+
+class Pictures(imgcolor.Pictures):
+    """The pictures on a slide, read from the PPTX package."""
+
+    def __init__(self, path, slide):
+        seen = []
+        for sh in slide.shapes:
+            if sh["tag"] == "pic" and sh.get("media") and sh["media"] not in seen:
+                seen.append(sh["media"])
+        imgcolor.Pictures.__init__(self, seen)
+        self.path = path
+
+    def read(self, name):
+        with zipfile.ZipFile(self.path) as z:
+            return z.read(name) if name in z.namelist() else b""
 
 
 def check_images(slide, scale, rep):
@@ -380,6 +494,19 @@ def check_effects(slide, rep):
                 "%d shape(s) carry effects (%s); LibreOffice rasterises these at 96-350 ppi "
                 "when exporting PDF, and they read as slide decoration: %s"
                 % (len(eff), ", ".join(kinds), ", ".join(sh["name"] for sh in eff[:5])))
+    th = [sh for sh in slide.shapes if sh.get("theme_effect")]
+    if th:
+        refs = sorted(set(sh["theme_effect"] for sh in th))
+        rep.add("error", "raster-effect",
+                "(theme) %d shape(s) inherit an effect from %s through <p:style><a:effectRef "
+                "idx=\"%s\"> (%s). LibreOffice draws it even when the shape writes an empty "
+                "<a:effectLst/>, and exports each one as a blurred 96-300 ppi grey picture; "
+                "PowerPoint and Keynote do not show it, so it is invisible while editing. Set "
+                "effectRef idx to 0 or empty the theme's effectStyleLst -- audit_pptx.py --fix "
+                "OUT.pptx does both: %s"
+                % (len(th), os.path.basename(slide.theme_part or "the theme"),
+                   "|".join(str(k) for k, _ in refs), "; ".join("%d: %s" % r for r in refs),
+                   ", ".join(_label(sh) for sh in th[:4]) + (" ..." if len(th) > 4 else "")))
 
 
 def check_canvas(slide, rep):
@@ -410,7 +537,71 @@ def check_head_sizes(slide, rep):
                 "arrowhead length per application -- " + "; ".join(parts))
 
 
-def audit(path, width=None, ref=None):
+# --------------------------------------------------------------------- --fix
+_PARA = re.compile(r"<a:p(?:\s[^>]*)?>.*?</a:p>", re.S)
+_RPR = re.compile(r"<a:rPr\b[^>]*>")
+
+
+def _attr(tag, name):
+    m = re.search(r'\s%s="([^"]*)"' % name, tag)
+    return m.group(1) if m else None
+
+
+def _raise_subscripts(para, done):
+    """Re-set every subscript in one paragraph that LibreOffice would print
+    detached (see check_script_drop) to pptx.script_baseline."""
+    runs = [(m, float(_attr(m.group(0), "sz") or 1800) / 100.0,
+             int(_attr(m.group(0), "baseline") or 0)) for m in _RPR.finditer(para)]
+    base = [(k, sz) for k, (_, sz, b) in enumerate(runs) if not b]
+    out, last = [], 0
+    for k, (m, sz, b) in enumerate(runs):
+        if b >= 0 or abs(b) / 100000.0 / pptx.LO_SCRIPT_SIZE <= MAX_SUB_DROP + 1e-6:
+            continue
+        near = min(base, key=lambda q: (abs(q[0] - k), q[0] > k)) if base else None
+        body = near[1] if near else sz / pptx.SCRIPT_COMPENSATION
+        new = pptx.script_baseline(-1, sz / body)
+        out += [para[last:m.start()],
+                re.sub(r'(\sbaseline=")-?\d+"', r'\g<1>%d"' % new, m.group(0))]
+        last = m.end()
+        done["subscripts"].append(new)
+    return "".join(out) + para[last:]
+
+
+def fix(path, out, slide_no=1):
+    """Copy the PPTX to ``out`` with the two mechanical repairs made and
+    return what changed.  Theme effects: every <a:effectRef idx> that points
+    at a non-empty theme effect style is set to 0, and the theme's effect
+    styles are emptied so shapes drawn later do not pick them up either.
+    Subscripts that LibreOffice would print detached are raised.  Every
+    other byte is copied unchanged."""
+    slide = ooxml.read(path, slide_no)
+    bad = set(k + 1 for k, d in enumerate(slide.theme_effects) if d)
+    done = {"effect_refs": 0, "theme_styles": len(bad), "subscripts": []}
+
+    def ref0(m):
+        if int(m.group(1)) not in bad:
+            return m.group(0)
+        done["effect_refs"] += 1
+        return '<a:effectRef idx="0"'
+
+    tmp = out + ".tmp"
+    with zipfile.ZipFile(path) as zin, zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zout:
+        for it in zin.infolist():
+            data = zin.read(it.filename)
+            if it.filename == slide.part:
+                x = re.sub(r'<a:effectRef idx="(\d+)"', ref0, data.decode("utf-8"))
+                x = _PARA.sub(lambda m: _raise_subscripts(m.group(0), done), x)
+                data = x.encode("utf-8")
+            elif it.filename == slide.theme_part and bad:
+                data = re.sub(r"<a:effectStyle>.*?</a:effectStyle>",
+                              "<a:effectStyle><a:effectLst/></a:effectStyle>",
+                              data.decode("utf-8"), flags=re.S).encode("utf-8")
+            zout.writestr(it, data)
+    os.replace(tmp, out)
+    return done
+
+
+def audit(path, width=None, ref=None, legend_in_images=False):
     slide = ooxml.read(path)
     W = slide.size[0]
     rep = Report()
@@ -426,7 +617,7 @@ def audit(path, width=None, ref=None):
     check_arrows(slide, scale, rep)
     check_text(slide, scale, rep)
     check_scripts(slide, ref, rep)
-    check_legend(slide, rep)
+    check_legend(slide, rep, Pictures(path, slide), legend_in_images)
     check_images(slide, scale, rep)
     check_effects(slide, rep)
     check_canvas(slide, rep)
@@ -446,16 +637,34 @@ def main(argv=None):
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--spec", help="the cvpr-figure spec the PPTX came from")
     g.add_argument("--ref", help="a source SVG (e.g. FigGenie's) to compare subscripts with")
+    ap.add_argument("--fix", metavar="OUT.pptx",
+                    help="write a copy with theme effects switched off and detached "
+                         "subscripts raised, then audit the copy")
+    ap.add_argument("--legend-in-images", action="store_true",
+                    help="take legend colours that no shape uses as drawn inside the pictures")
     ap.add_argument("--json", action="store_true")
     ap.add_argument("--strict", action="store_true", help="fail on warnings too")
     args = ap.parse_args(argv)
-    rep, meta = audit(args.pptx, args.width, args.spec or args.ref)
+    target, fixed = args.pptx, None
+    if args.fix:
+        fixed = fix(args.pptx, args.fix)
+        target = args.fix
+    rep, meta = audit(target, args.width, args.spec or args.ref, args.legend_in_images)
+    if fixed is not None:
+        meta["fixed"] = dict(fixed, subscripts=len(fixed["subscripts"]), out=target)
     c = rep.counts()
     if args.json:
         print(json.dumps({"counts": c, "findings": rep.rows, "meta": meta}, indent=2))
     else:
         icon = {"error": "FAIL", "warning": "WARN", "note": "note"}
         order = {"error": 0, "warning": 1, "note": 2}
+        if fixed is not None:
+            sb = sorted(set(fixed["subscripts"]))
+            print("fixed -> %s: %d theme effect reference(s) set to 0, %d theme effect style(s) "
+                  "emptied, %d subscript(s) raised%s\n"
+                  % (target, fixed["effect_refs"], fixed["theme_styles"],
+                     len(fixed["subscripts"]),
+                     " (baseline %s)" % "/".join(str(b) for b in sb) if sb else ""))
         for r in sorted(rep.rows, key=lambda r: order[r["level"]]):
             print("%-4s %-20s %s" % (icon[r["level"]], r["code"], r["message"]))
         print("\n%d error(s), %d warning(s), %d note(s) | slide %.0f x %.0f pt printed at "

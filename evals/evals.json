@@ -1,6 +1,6 @@
 {
   "skill": "cvpr-figure",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "cases": [
     {
       "id": "pipeline-from-method-text",
@@ -107,6 +107,26 @@
         "uses figure: {type_scale: ...} in the spec and re-renders",
         "does not ask the user to enlarge labels one by one in PowerPoint",
         "re-checks that the figure still fits the column"
+      ]
+    },
+    {
+      "id": "theme-shadows",
+      "prompt": "I exported the FigGenie PPTX to PDF with LibreOffice and every box has a blurry grey shadow, but I can't see any shadow in Keynote.",
+      "expect": [
+        "runs audit_pptx.py and identifies shadows inherited from the theme (effectRef), not effects on the shapes",
+        "explains that LibreOffice draws them despite the empty <a:effectLst/> while Keynote hides them",
+        "uses audit_pptx.py --fix to write a repaired copy instead of editing the user's file in place",
+        "re-exports with export_pptx.py and confirms audit_pdf.py no longer reports raster-shadow"
+      ]
+    },
+    {
+      "id": "class-legend",
+      "prompt": "The auditor says my occupancy legend entries (car, bus, terrain...) are orphaned, but those colours are in the renders.",
+      "expect": [
+        "explains that legend colours are looked for inside the pictures, shaded tones included",
+        "for classes still reported, checks whether they really occur in these samples rather than suppressing the check",
+        "offers in_image: true / --legend-in-images only for colours that are genuinely in the pictures",
+        "asks whether the full palette is kept on purpose before deleting legend entries"
       ]
     }
   ],

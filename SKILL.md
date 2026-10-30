@@ -14,7 +14,8 @@ description: >-
   look machine-generated, checks that every symbol is defined in a label or the
   caption, and — after the user hand-edits the PPTX in WPS, PowerPoint or
   Keynote — audits the edited PPTX and the exported PDF (45-degree arrowheads,
-  lost subscripts, orphaned legend entries, downsampled images, tiny type).
+  lost or detached subscripts, orphaned legend entries, hidden theme shadows,
+  downsampled images, tiny type), and writes a repaired copy with --fix.
   Works from a paper section, an abstract, a method
   description, a PyTorch nn.Module source tree, or an mmengine/mmdet
   `model = dict(...)` config —
@@ -247,12 +248,19 @@ one, audit the files that ship, not the spec. Load
 
 ```bash
 python3 scripts/audit_pptx.py fig.pptx --width 496.8 --spec spec.yaml   # or --ref source.svg
+python3 scripts/audit_pptx.py fig.pptx --width 496.8 --fix fig_fixed.pptx   # theme shadows, detached subscripts
 python3 scripts/export_pptx.py fig.pptx --width 496.8                   # lossless, audits the PDF
 python3 scripts/audit_pdf.py fig.pdf --width 496.8
 ```
 
 `audit_pptx.py` works on any PPTX, including FigGenie's. Pass the width the
-figure is included at. Application differences (arrowhead sizes, Keynote's
+figure is included at. `--fix` writes a copy and leaves the user's file
+alone. It switches off shadows inherited from the theme (LibreOffice draws
+them, PowerPoint and Keynote hide them) and re-shifts subscripts that
+LibreOffice would print detached. Hand the copy back, and say what changed.
+A class legend for renders is checked against the pictures themselves. If
+classes are reported missing, ask whether the full palette is kept on purpose
+before deleting entries. Application differences (arrowhead sizes, Keynote's
 whole-point type, LibreOffice's default 300 dpi JPEG export) are in
 [references/app-compatibility.md](references/app-compatibility.md).
 

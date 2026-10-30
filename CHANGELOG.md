@@ -1,5 +1,71 @@
 # Changelog
 
+## 3.1.0
+
+Auditing all 17 figures of a real CVPR submission with 3.0 turned up three
+defects in the auditors themselves: one problem they missed, one false
+alarm, and one bad side effect of 3.0's own subscript fix. Each was measured
+in LibreOffice and Keynote before it was changed.
+
+### Fixed
+
+- **Shadows inherited from the theme went unreported.** FigGenie's PPTX gives
+  every shape an empty `<a:effectLst/>` plus `<p:style><a:effectRef idx="1|2">`,
+  which points at theme effect styles that draw a 35–38 % `outerShdw`. By the
+  OOXML spec the empty list cancels the shadow, and PowerPoint and Keynote
+  draw none. LibreOffice ignores the override and draws all 139 shadows, then
+  exports each one as a blurred 97–313 ppi grey picture. `audit_pptx.py` took
+  the override at face value. It now resolves `effectRef` against the theme
+  the slide master actually uses, and reports `raster-effect (theme)` as an
+  error, whatever the shape writes.
+- **Class legends for rendered images were reported as orphaned.** A legend
+  for occupancy or segmentation classes (car, bus, vegetation …) explains
+  colours that appear only inside embedded renders. Every qualitative figure
+  of the submission got 10 `legend-orphan` errors. Both auditors now look
+  inside the pictures: `audit_pptx.py` checks the embedded media,
+  `validate.py` the files in image slots. A pixel counts for a legend colour
+  when it is that colour times a shading factor between 0.45 and 1.2, so
+  shaded voxels are matched. Calibration on Fig. 4's 24 renders: every legend
+  class covers at least 0.2 % of some render, while clearly absent colours
+  stay at or below 0.006 %. The threshold is 0.1 %. Grey and pale colours
+  are never looked for, because backgrounds would match them. In a legend
+  whose other entries are found, a class that occurs in no picture is
+  reported once, as a warning. Keeping a full palette across figures is a
+  legitimate choice. Needs Pillow or PyMuPDF; without either, the auditors
+  say so rather than guess.
+- **Enlarged subscripts dropped too far in LibreOffice.** LibreOffice prints a
+  baseline-shifted run at 58.5 % of its size and moves it by baseline × the
+  run's *own* size. So 3.0's 15 % larger scripts at −25 % sat 0.29 × body
+  below the line. Scripts enlarged by hand to 1.25× sat 0.31 × body below,
+  43 % of their own height, and a lone `d₁` looked like `d` and `1`. The
+  writer now sets the shift in body terms and divides it by the enlargement:
+  −17 % for subscripts (0.20 × body, the measured best being 7.8 pt on
+  7.0 pt at −18 %), +28 % for superscripts (0.32 × body, as in the SVG).
+
+### Added
+
+- `audit_pptx.py --fix OUT.pptx` writes a repaired copy, then audits it.
+  Theme effect references are set to 0 and the theme's effect styles are
+  emptied. Subscripts LibreOffice would print detached are re-shifted.
+  Every other byte is copied unchanged. On the submission's Fig. 2 it raised
+  27 subscripts from −25 % to −16 %; on FigGenie's original it removed all
+  139 shadows, and the LibreOffice PDF went from 157 images to 18.
+- `script-too-low`: in `audit_pptx.py`, a subscript shifted more than about
+  −20 %, which LibreOffice prints over 35 % of its own height below the line.
+  In `audit_pdf.py`, the same drop measured in the PDF.
+- `audit_pdf.py` `raster-shadow`: images that are one flat colour under a soft
+  mask are reported together as rasterised shadows or transparency, instead of
+  as one `image-low-ppi` per shadow plus a `page-is-raster`.
+- `audit_pptx.py --legend-in-images` and the legend item key `in_image: true`
+  declare that a colour is drawn inside the pictures.
+- `audit_pdf.py --source fig.pptx`, passed automatically by `export_pptx.py`:
+  a picture that was already JPEG in the PPTX is a note, not an `image-jpeg`
+  warning. So is a JPEG at the native frame size of a common driving camera
+  (nuScenes 1600×900, Waymo, KITTI, Argoverse 2, Cityscapes, DDAD, ONCE …).
+  Camera photos are JPEG at the source.
+- `audit_pptx.py` reads the theme through the slide → layout → master chain,
+  not the first `theme*.xml` in the package.
+
 ## 3.0.0
 
 Everything in this release comes from using 2.0 on a real CVPR submission.

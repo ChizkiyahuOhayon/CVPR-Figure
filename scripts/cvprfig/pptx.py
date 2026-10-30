@@ -30,7 +30,26 @@ from . import edges as edgemod, layout as L, shapes as SH, style, text as T
 ESC = sx.escape
 EMU = 12700.0          # EMU per point
 SCRIPT_COMPENSATION = 1.15
+# LibreOffice prints a baseline-shifted run at 58.5 % of its size (Keynote
+# about 67 %) and moves it by baseline x the run's *own* size, so a run
+# written 15 % larger also drops 15 % further: 3.0 wrote -25 %, which printed
+# 0.29 x body below the line.  Shifts are set in body terms and divided by the
+# enlargement -- a subscript 0.20 x body down (best in LibreOffice: 7.8 pt on
+# 7.0 pt at -18 %), a superscript 0.32 x body up, as in the SVG.  A shift
+# past 0.35 x LO_SCRIPT_SIZE (about -20 %) prints a subscript more than 35 %
+# of its own height below the line in LibreOffice, where it reads as
+# detached; SUB_LIMIT keeps a margin below that.
+SUB_DROP = 0.20
+SUB_LIMIT = 0.18
+LO_SCRIPT_SIZE = 0.585
 A = "http://schemas.openxmlformats.org/drawingml/2006/main"
+
+
+def script_baseline(script, ratio=SCRIPT_COMPENSATION):
+    """DrawingML ``baseline`` (1/1000 %) for a script run ``ratio`` x body size."""
+    if script > 0:
+        return int(round(T.SCRIPT_RISE / ratio * 100)) * 1000
+    return -int(round(min(SUB_DROP / ratio, SUB_LIMIT) * 100)) * 1000
 
 
 def e(v):
@@ -115,6 +134,7 @@ class Deck(object):
         # (LibreOffice to 58 %, Keynote to 67 %), on top of the size given.
         # Writing scripts 15 % larger lands them near the SVG's 72 %.
         sz_script = str(int(round(size * 100 * SCRIPT_COMPENSATION)))
+        shift = {1: script_baseline(1), -1: script_baseline(-1)}
         col = hx(ts.get("color", "#000000"))
         b = ' b="1"' if ts.get("bold") else ""
         i = ' i="1"' if ts.get("italic") else ""
@@ -126,7 +146,7 @@ class Deck(object):
                                                       ts.get("italic", False)):
                 if not chars:
                     continue
-                base = ' baseline="%d"' % (30000 if script > 0 else -25000) if script else ""
+                base = ' baseline="%d"' % shift[1 if script > 0 else -1] if script else ""
                 runs.append('<a:r><a:rPr lang="en-US" sz="%s"%s%s%s dirty="0">'
                             '<a:solidFill><a:srgbClr val="%s"/></a:solidFill>'
                             '<a:latin typeface="%s"/><a:cs typeface="%s"/></a:rPr>'

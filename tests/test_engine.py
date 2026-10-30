@@ -582,6 +582,123 @@ _rep5, _ = _AP.audit(_p5)
 check([r["code"] for r in _rep5.rows].count("legend-orphan") == 1, "an orphaned legend entry is caught in the PPTX")
 check("<p:grpSp>" in zipfile.ZipFile(_p5).read("ppt/slides/slide1.xml").decode(), "the legend is a group")
 
+
+# ====================================================================== v3.1
+from cvprfig import imgcolor as _IC
+import audit_pdf as _AD
+
+
+def _repack(src, dst, edit):
+    """Copy a PPTX, passing each part's text through ``edit(name, text)``."""
+    with zipfile.ZipFile(src) as zi, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zo:
+        for it in zi.infolist():
+            b = zi.read(it.filename)
+            if it.filename.endswith(".xml"):
+                b = edit(it.filename, b.decode()).encode()
+            zo.writestr(it, b)
+
+
+def _rgb_png(path, w, h, px):
+    raw = b"".join(b"\x00" + b"".join(bytes(px(x, y)) for x in range(w)) for y in range(h))
+    open(path, "wb").write(b"\x89PNG\r\n\x1a\n" + _chunk(b"IHDR", _st.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+                           + _chunk(b"IDAT", _zl.compress(raw)) + _chunk(b"IEND", b""))
+
+
+section("v3.1 theme shadows")
+_SHDW = ('<a:effectStyle><a:effectLst><a:outerShdw blurRad="40000" dist="23000" dir="5400000">'
+         '<a:srgbClr val="000000"><a:alpha val="35000"/></a:srgbClr></a:outerShdw></a:effectLst>'
+         '</a:effectStyle>')
+_STYLE = ('<p:style><a:lnRef idx="0"><a:scrgbClr r="0" g="0" b="0"/></a:lnRef><a:fillRef idx="0">'
+          '<a:scrgbClr r="0" g="0" b="0"/></a:fillRef><a:effectRef idx="2"><a:scrgbClr r="0" g="0" '
+          'b="0"/></a:effectRef><a:fontRef idx="minor"/></p:style>')
+
+
+def _shadowed(name, x):
+    # FigGenie's pattern: an empty <a:effectLst/> on every shape, and a
+    # <p:style> pointing at a theme effect style that draws a shadow.
+    if name.startswith("ppt/theme/"):
+        return _re.sub(r"<a:effectStyleLst>.*?</a:effectStyleLst>",
+                       "<a:effectStyleLst>" + _SHDW * 3 + "</a:effectStyleLst>", x, flags=_re.S)
+    if name == "ppt/slides/slide1.xml":
+        return _re.sub(r"</a:prstGeom>(.*?)</p:spPr>", r"</a:prstGeom>\1<a:effectLst/></p:spPr>" + _STYLE,
+                       x, flags=_re.S)
+    return x
+
+
+_p6 = os.path.join(_d, "shadow.pptx")
+_repack(_p5, _p6, _shadowed)
+_s6 = _OX.read(_p6)
+check(_s6.theme_part == "ppt/theme/theme1.xml" and _s6.theme_effects[1] == "outerShdw 35%",
+      "the master's theme and its effect styles are read")
+_rep6, _ = _AP.audit(_p6)
+_rows6 = [r for r in _rep6.rows if r["code"] == "raster-effect"]
+check(_rows6 and _rows6[0]["level"] == "error" and "(theme)" in _rows6[0]["message"],
+      "a shadow inherited from the theme is an error, despite the empty <a:effectLst/>")
+_p7 = os.path.join(_d, "shadow_fixed.pptx")
+_done = _AP.fix(_p6, _p7)
+_rep7, _ = _AP.audit(_p7)
+check(_done["effect_refs"] > 0 and _done["theme_styles"] == 3
+      and not any(r["code"] == "raster-effect" for r in _rep7.rows),
+      "--fix switches theme effects off (%d references)" % _done["effect_refs"])
+check('<a:effectRef idx="0"' in zipfile.ZipFile(_p7).read("ppt/slides/slide1.xml").decode()
+      and "outerShdw" not in zipfile.ZipFile(_p7).read("ppt/theme/theme1.xml").decode(),
+      "...in the slide and in the theme")
+
+section("v3.1 subscript placement")
+check(pptx_writer.script_baseline(-1) == -17000 and pptx_writer.script_baseline(1) == 28000,
+      "scripts written 15 % larger are shifted -17 % / +28 % (0.20 / 0.32 x body)")
+check(pptx_writer.script_baseline(-1, 7.8 / 7.0) == -18000, "7.8 on 7.0 pt gets the measured -18 %")
+check('baseline="-17000"' in _x3 and not any(r["code"] == "script-too-low"
+                                              for r in _AP.audit(_p3)[0].rows),
+      "the engine's own subscripts pass")
+_p8 = os.path.join(_d, "low.pptx")
+_repack(_p3, _p8, lambda n, x: x.replace('baseline="-17000"', 'baseline="-25000"'))
+_rep8, _ = _AP.audit(_p8)
+check(any(r["code"] == "script-too-low" for r in _rep8.rows),
+      "-25 % on an enlarged run is caught (LibreOffice: 43 % of the script's height)")
+_p9 = os.path.join(_d, "low_fixed.pptx")
+_done = _AP.fix(_p8, _p9)
+_rep9, _ = _AP.audit(_p9)
+check(_done["subscripts"] and not any(r["code"] == "script-too-low" for r in _rep9.rows),
+      "--fix raises them to %s" % sorted(set(_done["subscripts"])))
+_sp = lambda t, size, x0, x1, y: {"text": t, "size": size, "bbox": (x0, y - size, x1, y),
+                                   "origin": (x0, y)}
+_drops = _AD._script_drops([_sp("d", 6.5, 10, 13.3, 50), _sp("1", 4.7, 13.4, 15.8, 52.0),
+                            _sp("z", 6.5, 30, 33, 50), _sp("1", 4.7, 33.1, 35.5, 51.3)])
+check(len(_drops) == 2 and _drops[0][0] > _AD.MAX_SUB_DROP > _drops[1][0],
+      "audit_pdf measures the drop against the script's own size")
+check(_AD.CAMERAS.get((1600, 900)) == "nuScenes", "a nuScenes frame is recognised as a camera photo")
+
+section("v3.1 legends of rendered classes")
+if not _IC.available():
+    check(True, "(Pillow and PyMuPDF missing: picture checks skipped)")
+else:
+    check(_IC.share((4, [(1, (0, 0, 115)), (1, (0, 0, 230)), (2, (255, 255, 255))]), (0, 0, 230)) == 0.5,
+          "a shaded tone counts for its legend colour")
+    check(not _IC.saturated((128, 128, 128)) and _IC.saturated((0, 207, 191)),
+          "grey legend colours are never looked for in pictures")
+    _occ = os.path.join(_d, "occ.png")
+    # an occupancy-like render: car orange in three shades on white
+    _rgb_png(_occ, 60, 40, lambda x, y: (255, 158, 0) if x < 10 else (204, 126, 0) if x < 20
+             else (255, 255, 255))
+    _legspec = {"figure": {"width": 240},
+                "body": [{"id": "im", "shape": "image", "src": "occ.png", "w": 60}],
+                "legend": {"items": [{"text": "car", "kind": "swatch", "color": "#FF9E00"}]}}
+    check("legend-unused-entry" not in _codes(dict(_legspec), base=_d),
+          "validate: a legend colour drawn only in an image slot is used")
+    _legspec["legend"]["items"].append({"text": "bus", "kind": "swatch", "color": "#FF7F50"})
+    _c = _codes(dict(_legspec), base=_d)
+    check("legend-unused-entry" in _c, "validate: a class missing from the renders is still reported")
+    _legspec["legend"]["items"][1]["in_image"] = True
+    check("legend-unused-entry" not in _codes(dict(_legspec), base=_d), "...unless marked in_image")
+    _legspec["legend"]["items"] = _legspec["legend"]["items"][:1]
+    _p10 = os.path.join(_d, "occ.pptx")
+    pptx_writer.write(Figure(_legspec, base=_d), _p10)
+    _rows10 = _AP.audit(_p10)[0].rows
+    check(not any(r["code"] == "legend-orphan" for r in _rows10)
+          and any(r["code"] == "legend-in-images" for r in _rows10),
+          "audit_pptx: a legend colour drawn only in an embedded picture is not an orphan")
+
 print("\n%s  (%d failure%s)" % ("FAILED" if FAILED else "ALL PASSED",
                                 len(FAILED), "" if len(FAILED) == 1 else "s"))
 sys.exit(1 if FAILED else 0)

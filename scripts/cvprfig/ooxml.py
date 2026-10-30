@@ -159,6 +159,8 @@ class Slide(object):
         self.shapes = []
         self.has_bg = False
         self.media = {}
+        self.part = None
+        self.theme_part = None
         self.theme_effects = []
 
 
@@ -175,6 +177,41 @@ def _rels(z, part):
     return out
 
 
+def theme_part(z, slide_part):
+    """The theme the slide's master uses (slide -> layout -> master -> theme)."""
+    part = slide_part
+    for kind in ("slideLayout", "slideMaster", "theme"):
+        nxt = [t for t in _rels(z, part).values() if "/%s" % kind in t]
+        if not nxt:
+            break
+        part = nxt[0]
+        if kind == "theme":
+            return part if part in z.namelist() else None
+    th = sorted(n for n in z.namelist() if n.startswith("ppt/theme/theme"))
+    return th[0] if th else None
+
+
+def theme_effects(theme):
+    """One entry per <a:effectStyle>, in order: a short description such as
+    'outerShdw 38%' of what it draws, or '' for an empty style."""
+    out = []
+    for es in theme.iter(A + "effectStyle"):
+        kinds = []
+        el = es.find(A + "effectLst")
+        for c in (el if el is not None else []):
+            k = c.tag.replace(A, "")
+            al = c.find(".//" + A + "alpha")
+            if al is not None and al.get("val"):
+                k += " %d%%" % round(int(al.get("val")) / 1000.0)
+            kinds.append(k)
+        if es.find(A + "effectDag") is not None:
+            kinds.append("effectDag")
+        if es.find(A + "sp3d") is not None:
+            kinds.append("sp3d")
+        out.append(", ".join(kinds))
+    return out
+
+
 def read(path, slide_no=1):
     z = zipfile.ZipFile(path)
     pres = ET.fromstring(z.read("ppt/presentation.xml"))
@@ -184,6 +221,7 @@ def read(path, slide_no=1):
     prel = _rels(z, "ppt/presentation.xml")
     ids = [x.get(R + "id") for x in pres.find(P + "sldIdLst")]
     part = prel[ids[slide_no - 1]]
+    s.part = part
     root = ET.fromstring(z.read(part))
     rels = _rels(z, part)
     # background: slide, layout or master
@@ -197,12 +235,9 @@ def read(path, slide_no=1):
             chain.append(ET.fromstring(z.read(mrel[0])))
     s.has_bg = any(c.find(P + "cSld/" + P + "bg") is not None for c in chain)
     # theme effect styles, to resolve <p:style><a:effectRef idx>
-    th = [n for n in z.namelist() if n.startswith("ppt/theme/theme")]
-    if th:
-        t = ET.fromstring(z.read(sorted(th)[0]))
-        for es in t.iter(A + "effectStyle"):
-            el = es.find(A + "effectLst")
-            s.theme_effects.append(el is not None and len(el) > 0)
+    s.theme_part = theme_part(z, part)
+    if s.theme_part:
+        s.theme_effects = theme_effects(ET.fromstring(z.read(s.theme_part)))
     tree = root.find(P + "cSld/" + P + "spTree")
     _walk(tree, Affine(), s, rels, z, [])
     return s
@@ -236,20 +271,30 @@ def _ln_props(sppr, style_el):
     return out
 
 
-def _effects(sppr, style_el, s):
+def _effects(sppr):
+    """Effects the shape itself declares."""
     if sppr is not None:
         el = sppr.find(A + "effectLst")
         if el is not None:
             return [c.tag.replace(A, "") for c in el]
         if sppr.find(A + "effectDag") is not None:
             return ["effectDag"]
-    if style_el is not None:
-        ref = style_el.find(A + "effectRef")
-        if ref is not None:
-            k = int(ref.get("idx", "0") or 0)
-            if k > 0 and k <= len(s.theme_effects) and s.theme_effects[k - 1]:
-                return ["theme effectRef %d" % k]
     return []
+
+
+def _theme_effect(style_el, s):
+    """``(idx, description)`` of the theme effect a <p:style><a:effectRef>
+    points at, or None.  An empty <a:effectLst/> on the shape cancels it in
+    PowerPoint and Keynote, but LibreOffice draws it anyway (measured: 139
+    of 139 FigGenie shapes exported with a shadow), so it is reported
+    regardless of that override."""
+    ref = style_el.find(A + "effectRef") if style_el is not None else None
+    if ref is None:
+        return None
+    k = int(ref.get("idx", "0") or 0)
+    if 0 < k <= len(s.theme_effects) and s.theme_effects[k - 1]:
+        return k, s.theme_effects[k - 1]
+    return None
 
 
 def _text(el):
@@ -320,7 +365,8 @@ def _walk(tree, tf, s, rels, z, groups):
         xs = [c[0] for c in corners]; ys = [c[1] for c in corners]
         sh["box"] = (min(xs), min(ys), max(xs) - min(xs), max(ys) - min(ys))
         sh["scale"] = full.sx
-        sh["effects"] = _effects(sppr, style_el, s)
+        sh["effects"] = _effects(sppr)
+        sh["theme_effect"] = _theme_effect(style_el, s) if not sh["effects"] else None
         geom = None
         if sppr is not None:
             pg = sppr.find(A + "prstGeom")

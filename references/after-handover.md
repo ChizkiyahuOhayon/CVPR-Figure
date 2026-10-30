@@ -13,6 +13,8 @@ practice happened in those two steps:
 | a legend entry for an arrow that had been deleted | hand edit |
 | a 4000 ppi crop exported at 298 ppi JPEG | LibreOffice default PDF export |
 | type shrunk to 5.9 pt | hand edit, then the figure scaled into the column |
+| 139 blurred grey shadows nobody had drawn | a theme shadow LibreOffice applies and PowerPoint/Keynote hide |
+| subscripts that read as detached ("d 1") | subscripts enlarged by hand, still shifted −25 % |
 
 So the audit continues after the hand-over.
 
@@ -28,6 +30,9 @@ the spec, re-render, and redo the hand edits deliberately.
 ```bash
 # 1. audit the edited PPTX at the width it will print
 python3 scripts/audit_pptx.py figures/fig2.pptx --width 496.8 --spec figures/src/fig2.yaml
+
+# 1b. theme shadows or detached subscripts reported? write a repaired copy
+python3 scripts/audit_pptx.py figures/fig2.pptx --width 496.8 --fix figures/fig2_fixed.pptx
 
 # 2. export losslessly (LibreOffice by default; --via keynote on a Mac)
 python3 scripts/export_pptx.py figures/fig2.pptx -o figures/fig2.pdf --width 496.8
@@ -53,9 +58,13 @@ Works on any PPTX — this engine's, FigGenie's, or one drawn by hand.
 | `glue-broken` | warning | an arrow glued to a shape that was deleted |
 | `text-too-small` / `text-small` | error / warning | type under 6.0 / 6.5 pt at the printed width |
 | `lost-subscript` | error | with `--spec` or `--ref fig.svg`: a sub/superscript the source has and the PPTX does not. Without a reference: runs such as `z1:4`, `d1` that look like flattened subscripts |
-| `legend-orphan` | error | a legend swatch whose line style or fill nothing else in the figure uses |
+| `script-too-low` | warning | a subscript shifted more than about −20 %. LibreOffice prints it over 35 % of its own height below the line, where it reads as detached. `--fix` re-shifts it to 0.20 × body |
+| `legend-orphan` | error | a legend swatch whose line style or fill nothing else in the figure uses — not on a shape, and not inside an embedded picture (see below) |
+| `legend-orphan` | warning | a class of a picture legend that occurs in no picture, or pictures that cannot be read (no Pillow/PyMuPDF) |
+| `legend-in-images` | note | legend colours found only inside the pictures, with the share of the picture where each is most common |
 | `image-low-ppi` / `image-soft` | error / warning | an embedded picture under 300 / 600 ppi at its printed size |
-| `raster-effect` | warning | shadow, glow or soft edge; LibreOffice rasterises them at 96–350 ppi |
+| `raster-effect` | warning | shadow, glow or soft edge on a shape; LibreOffice rasterises them at 96–350 ppi |
+| `raster-effect` (theme) | error | shapes inherit a shadow from the theme through `<p:style><a:effectRef idx="1\|2">`. LibreOffice draws it even under an empty `<a:effectLst/>`; PowerPoint and Keynote hide it, so it cannot be seen while editing. FigGenie's PPTX does this on every shape. `--fix` sets the references to 0 and empties the theme's effect styles |
 | `no-background` | warning | Keynote renders a slide with no background on black |
 | `off-slide` | warning | content past the slide edge is cropped on export |
 | `mixed-fonts` | warning | more than two text families |
@@ -66,8 +75,10 @@ Works on any PPTX — this engine's, FigGenie's, or one drawn by hand.
 | Code | Level | What it means |
 |---|---|---|
 | `text-too-small` | error | glyph runs under 6.0 pt (scripts under 4.5 pt) |
+| `script-too-low` | warning | a subscript whose baseline is more than 35 % of its own size below its letter's |
 | `image-low-ppi` / `image-soft` | error / warning | under 300 / 600 ppi |
-| `image-jpeg` | warning | an image stored as JPEG/JPEG 2000 — re-export losslessly |
+| `raster-shadow` | error | images that are one flat colour under a soft mask: rasterised shadows or transparency, not photos. Usually a theme shadow — run `audit_pptx.py` on the PPTX |
+| `image-jpeg` | warning | an image stored as JPEG/JPEG 2000 — re-export losslessly. A note instead when the picture was already JPEG in the PPTX (`--source`, passed by `export_pptx.py`) or is a camera frame at its native size (nuScenes 1600×900, Waymo, KITTI …) |
 | `font-not-embedded` | error | the venue checker rejects this |
 | `type3-font` | warning | bitmap fonts with visible glyphs |
 | `page-is-raster` | error | the whole figure is one picture |
@@ -85,9 +96,36 @@ Works on any PPTX — this engine's, FigGenie's, or one drawn by hand.
 - **Deleting an element? Delete its legend entry.** The legend is one group
   with one sub-group per entry, so the swatch and its text go together; then
   re-centre the group.
-- **Subscripts:** in WPS/PowerPoint use Format → Font → Subscript (baseline
-  −25 %). Typing "z1:4" flat is what `lost-subscript` catches.
+- **Subscripts:** in WPS/PowerPoint use Format → Font → Subscript. Typing
+  "z1:4" flat is what `lost-subscript` catches. The default shift is −25 %.
+  LibreOffice applies it to the run's own size, so a subscript you also
+  enlarge drops further. If you enlarge one, lower the shift to about
+  −0.20 × body ÷ script size: −18 % for 7.8 pt on 7.0 pt, −16 % for 8.1 on
+  6.5 pt. `script-too-low` reports the ones that would read as detached, and
+  `--fix` rewrites them.
 - **No effects.** Shadows and glows are rasterised by LibreOffice on export.
+  That includes shadows you cannot see. If the file came from another tool
+  (FigGenie, a template), its theme may give every shape a shadow that only
+  LibreOffice draws; `raster-effect (theme)` finds it.
+
+## Legends for rendered classes
+
+A legend for occupancy or segmentation classes explains colours that only
+appear inside the embedded renders. Both auditors look in the pictures
+before they call such an entry orphaned. `audit_pptx.py` checks the PPTX
+media, and `validate.py` checks the files in `image` slots. A pixel counts
+for a legend colour when it equals that colour times a shading factor
+between 0.45 and 1.2. An entry counts as used when some picture has at least
+0.1 % of such pixels. Grey and pale colours are never looked for:
+backgrounds match them. When most entries are found and a few classes are
+in no picture, those few are reported once, as a warning. Either drop them
+from this figure's legend, or keep the full palette on purpose so the
+legend matches your other figures.
+
+Decoding needs Pillow or PyMuPDF. If neither is installed, or for a
+colour that is in a picture but too rare to be found, declare it: pass
+`--legend-in-images` to `audit_pptx.py`, or add `in_image: true` to the
+legend item in the spec.
 
 ## Exporting from an application by hand
 

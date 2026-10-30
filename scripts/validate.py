@@ -36,7 +36,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from cvprfig import Figure, load_path, layout as L, style, text as T   # noqa: E402
-from cvprfig import edges as edgemod                                    # noqa: E402
+from cvprfig import edges as edgemod, imgcolor                          # noqa: E402
 
 PALETTE = set()
 for _fam in style.FAMILIES.values():
@@ -752,6 +752,18 @@ def _edge_style_key(ed):
     return (color.upper(), bool(dash))
 
 
+def _picture_paths(fig):
+    """Files shown in the figure's image slots."""
+    out = []
+    for it in L.walk(fig.items):
+        sp = it.spec
+        for src in ([sp["src"]] if sp.get("src") else []) + list(sp.get("srcs") or []):
+            path = os.path.join(fig.base or "", str(src))
+            if os.path.isfile(path) and path not in out:
+                out.append(path)
+    return out
+
+
 def check_legend(fig, rep):
     """The legend and the figure must agree both ways.
 
@@ -773,6 +785,23 @@ def check_legend(fig, rep):
         elif it.spec.get("fill"):
             fills.add(style.resolve_color(it.spec.get("fill"), "none").upper())
     legend_lines = set()
+    pics = imgcolor.Pictures(_picture_paths(fig))
+    in_pics, absent = [], []
+
+    def unused(txt, col, what, e):
+        # A class legend (occupancy, segmentation) explains colours that only
+        # the renders in image slots use.
+        seen = True if e.get("in_image") else imgcolor.lookup(col, pics)
+        if seen is True or (seen and seen[0]):
+            in_pics.append(txt)
+        elif seen:
+            absent.append((txt, col, what, seen[1]))
+        elif seen is None:
+            rep.warn("legend-unused-entry", what + "; install Pillow or PyMuPDF to look for it "
+                     "in the image slots, or mark the entry `in_image: true`", "legend")
+        else:
+            rep.error("legend-unused-entry", what, "legend")
+
     for e in items:
         kind = e.get("kind", "line")
         col = style.resolve_color(e.get("color"), style.INK, ink=True).upper()
@@ -781,15 +810,22 @@ def check_legend(fig, rep):
             key = (col, kind == "dashed" or bool(e.get("dash")))
             legend_lines.add(key)
             if key not in edge_styles:
-                rep.error("legend-unused-entry",
-                          "legend entry %r shows a %s %s line that no edge in the figure "
-                          "uses" % (txt, "dashed" if key[1] else "solid", key[0]), "legend")
+                unused(txt, key[0], "legend entry %r shows a %s %s line that no edge in the "
+                       "figure uses" % (txt, "dashed" if key[1] else "solid", key[0]), e)
         else:
             f = style.resolve_color(e.get("fill"), col).upper()
             if f not in fills:
-                rep.error("legend-unused-entry",
-                          "legend entry %r shows fill %s, which no module uses" % (txt, f),
-                          "legend")
+                unused(txt, f, "legend entry %r shows fill %s, which no module uses" % (txt, f), e)
+    if absent and len(in_pics) >= max(2, len(absent)):
+        rep.warn("legend-unused-entry",
+                 "%d class(es) of a picture legend occur in no image slot: %s. Drop them from "
+                 "this figure's legend, or keep the full palette on purpose to match the other "
+                 "figures" % (len(absent), ", ".join("%s %s" % (t, c) for t, c, _, _ in absent)),
+                 "legend")
+    else:
+        for t, c, what, v in absent:
+            rep.error("legend-unused-entry", what + " (%.3f %% of an image slot at most)"
+                      % (100 * v), "legend")
     def family(col):
         col = (col or "").upper()
         for fam, ladder in style.FAMILIES.items():

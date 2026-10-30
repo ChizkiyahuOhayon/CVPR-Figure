@@ -39,6 +39,16 @@
 
 ## What's new in v3
 
+**3.1** fixes what auditing all 17 figures of that submission with 3.0 turned
+up. First, a shadow inherited from the theme: LibreOffice draws it even under
+an empty `<a:effectLst/>`, while PowerPoint and Keynote hide it. FigGenie's
+PPTX had 139. It is now an error. Second, class legends for occupancy renders
+were reported as orphaned. The auditors now look for the colours inside the
+pictures, counting shaded tones. Third, enlarged subscripts dropped too far
+in LibreOffice. The engine now writes a shift that keeps them at 0.20 × body,
+and `script-too-low` catches hand-enlarged ones. `audit_pptx.py --fix` writes
+a repaired copy for the first and third.
+
 v3 comes from using v2.0 on a real CVPR submission, where everything that
 went wrong went wrong *after* the figure left the engine — in the hand-edited
 PPTX and the PDF exported from it.
@@ -265,6 +275,7 @@ YAML, render. Everything in [`references/spec-language.md`](references/spec-lang
 | **For `.pdf`** | any one of Inkscape, LibreOffice, `rsvg-convert`, CairoSVG |
 | **For `.png` / `.tiff`** | `pdftoppm` (poppler-utils) or ImageMagick |
 | **For `.emf`** | Inkscape or LibreOffice |
+| **For the hand-over audits** | PyMuPDF (`audit_pdf.py`); Pillow or PyMuPDF to look for legend colours inside pictures |
 
 `.svg`, `.vsdx` and `.pptx` are written by bundled code and **always** work.
 
@@ -649,6 +660,7 @@ source; audit it, and the PDF made from it:
 
 ```bash
 python3 scripts/audit_pptx.py fig.pptx --width 496.8 --spec spec.yaml   # any PPTX, FigGenie's too
+python3 scripts/audit_pptx.py fig.pptx --width 496.8 --fix fig_fixed.pptx   # theme shadows, detached subscripts
 python3 scripts/export_pptx.py fig.pptx --width 496.8                   # lossless PDF + audit
 python3 scripts/audit_pdf.py   fig.pdf  --width 496.8
 ```
@@ -761,6 +773,7 @@ scripts/
     text.py               baked Adobe Core-14 metrics, inline markup, maths, symbols
     ooxml.py              reads any PPTX back: paths, runs, pictures, glue
     imgsize.py            PNG/JPEG/GIF/PDF dimensions, no dependencies
+    imgcolor.py           legend colours inside pictures, shading-aware (Pillow or PyMuPDF)
     layout.py             the box-model solver
     edges.py              orthogonal routing, final runs, lanes
     shapes.py             the shape vocabulary
